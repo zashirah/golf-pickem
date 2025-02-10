@@ -3,9 +3,7 @@ from dataclasses import dataclass
 
 db = database('data/golf_pickem.db')
 
-tournaments,picks = db.t.tournaments,db.t.picks
-
-Tournament,Pick = tournaments.dataclass(),picks.dataclass()
+tournaments,picks,golfers,tournament_golfers = db.t.tournaments,db.t.picks,db.t.golfers,db.t.tournament_golfers
 
 if tournaments not in db.t:
     tournaments.create(id=int, name=str, current=bool, allow_submissions=bool, pk='id')
@@ -14,6 +12,14 @@ Tournament = tournaments.dataclass()
 if picks not in db.t:
     picks.create(id=int, pickname=str, tier1_pick=str, tier2_pick=str, tier3_pick=str, tier4_pick=str, tournament_id=int, pk='id')
 Pick = picks.dataclass()
+
+if golfers not in db.t:
+    golfers.create(id=int, name=str, pk='id')
+Golfer = golfers.dataclass()
+
+if tournament_golfers not in db.t:
+    tournament_golfers.create(id=int, tournament_id=int, golfer_id=int, pk='id')
+TournamentGolfers = tournament_golfers.dataclass()
 
 @patch
 def __ft__(self:Pick):
@@ -59,6 +65,12 @@ def __ft__(self:Tournament):
                 hx_patch=f'/tournaments/{self.id}/submissions', 
                 hx_swap='outerHTML', 
                 target_id=tid, 
+                style='background-color:green; border-color:green;',
+            )
+        ),
+        Td(Button(
+                'Download Field', 
+                hx_get=f'/tournaments/{self.id}/field', 
                 style='background-color:green; border-color:green;',
             )
         ),
