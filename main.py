@@ -1,24 +1,24 @@
 from fasthtml.common import *
 from dataclasses import dataclass
 
-
 db = database('data/golf_pickem.db')
 
 tournaments,picks = db.t.tournaments,db.t.picks
 
-if picks not in db.t:
-    picks.create(id=int, pickname=str, tier1_pick=str, tier2_pick=str, tier3_pick=str, tier4_pick=str, pk='id')
+Tournament,Pick = tournaments.dataclass(),picks.dataclass()
+
 if tournaments not in db.t:
     tournaments.create(id=int, name=str, current=bool, allow_submissions=bool, pk='id')
+Tournament = tournaments.dataclass()
 
-print(db.t)
-
-Tournament,Pick = tournaments.dataclass(),picks.dataclass()
+if picks not in db.t:
+    picks.create(id=int, pickname=str, tier1_pick=str, tier2_pick=str, tier3_pick=str, tier4_pick=str, tournament_id=int, pk='id')
+Pick = picks.dataclass()
 
 @patch
 def __ft__(self:Pick):
     pid = f'pick-{self.id}'
-    return Tr(
+    return Tr(Td(self.tournament_id),
         Td(self.pickname), Td(self.tier1_pick), Td(self.tier2_pick), Td(self.tier3_pick), Td(self.tier4_pick), 
         Td(
             Button(
@@ -39,7 +39,7 @@ def __ft__(self:Tournament):
         Td(self.name), Td(self.current), Td(self.allow_submissions),
         Td(
             Button(
-                'delete', 
+                'Delete', 
                 hx_delete=f'/tournaments/{self.id}', 
                 hx_swap='outerHTML', 
                 target_id=tid, 
@@ -55,7 +55,7 @@ def __ft__(self:Tournament):
             )
         ),
         Td(Button(
-                'Disallow Submissions ' if self.current else 'Allow Submissions', 
+                'Disallow Submissions ' if self.allow_submissions else 'Allow Submissions', 
                 hx_patch=f'/tournaments/{self.id}/submissions', 
                 hx_swap='outerHTML', 
                 target_id=tid, 
@@ -95,14 +95,17 @@ tables:
         * tier 4 pick
 """
 
-
 def options(tier:int):
     return (
         Option(f'Select a player from tier {tier}'),
-        Option(f'tier{tier}: option 1'),
-        Option(f'tier{tier}: option 2'),
-        Option(f'tier{tier}: option 3')
+        Option(f'option 1'),
+        Option(f'option 2'),
+        Option(f'option 3'),
+        Option(f'option 4')
     )
+
+def tournament_options():
+    return Div(*[Option(t.name) for t in tournaments(order_by="current")])
 
 def select_player(tier:int): return Select(options(tier), placeholder=f'Select tier {tier} player', name=f'tier{tier}_pick')
 
@@ -148,8 +151,8 @@ def get_header():
     return Header(
             Grid(
                 H1("Golf Pick'em"),
-                Button('Tournaments', hx_get='/tournaments', hx_swap_oob='true', hx_target="#home"),
                 Button("Pick'em", hx_get='/picks', hx_swap_oob='true', hx_target="#home"),
+                Button('Tournaments', hx_get='/tournaments', hx_swap_oob='true', hx_target="#home"),
             )
         )
 
@@ -157,6 +160,7 @@ def get_header():
 def home(): 
     return Main(
         get_header(),
+        H2(tournaments(where="allow_submissions=1")[0].name),
         update_form(),
         Main(id='home')
     )
@@ -222,11 +226,12 @@ def validate_pick(pick: Pick):
 
 @app.post('/picks')
 def post_picks(pick: Pick): 
+    print(pick)
     if validate_pick(pick):
+        pick.tournament_id = tournaments(where="allow_submissions=1")[0].id
         return picks.insert(pick)
 
 @app.delete('/picks/{pid}')
 def delete_pick(pid:int): picks.delete(pid)
-
 
 serve()
