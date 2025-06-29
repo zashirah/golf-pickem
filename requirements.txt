@@ -1,1 +1,13 @@
-python-fasthtml
+# Core dependencies
+python-fasthtml>=0.7.0
+fastlite>=0.0.9
+
+# Development dependencies
+jupyterlab>=4.0.0
+
+# Optional dependencies for production
+gunicorn>=21.0.0
+
+# Utility dependencies
+python-dotenv>=1.0.0
+pathlib2>=2.3.0
