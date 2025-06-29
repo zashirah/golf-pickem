@@ -13,6 +13,13 @@ A FastHTML-based web application for managing golf tournament pick'em leagues. P
 - **Database Management**: SQLite database with FastHTML's built-in ORM
 - **Responsive UI**: Modern, clean interface with custom CSS
 
+### ✅ Phase 2 Complete - User Management System
+- **Enhanced User Management**: Profile viewing, editing, and management
+- **Admin Panel**: Admin-only access to user management
+- **Session Security**: Improved session handling and security
+- **Password Reset**: Forgot password and reset functionality 
+- **Role-Based Access**: Admin vs standard user permissions
+
 ## 🚀 Quick Start
 
 ### Prerequisites
@@ -72,11 +79,13 @@ golf-pickem/
 
 ## 🔐 Authentication System
 
-- **Registration**: Create new user accounts with email validation
-- **Login/Logout**: Secure session-based authentication
+- **Registration**: Create new user accounts with validation
+- **Login/Logout**: Secure session-based authentication with salted password hashing
 - **Session Management**: 30-day session tokens with automatic cleanup
-- **Protected Routes**: Pick creation and management require authentication
-- **Guest Access**: Public viewing of tournaments, field, and leaderboards
+- **Password Reset**: Secure token-based password reset functionality
+- **User Profiles**: View and edit user information
+- **Admin Controls**: User management dashboard for administrators
+- **Protected Routes**: Different authorization levels for regular and admin users
 
 ## 🎯 Usage
 
@@ -109,23 +118,24 @@ docker run -p 5001:5001 golf-pickem
 ### Phase 1 ✅ (Complete)
 - [x] Project setup and FastHTML foundation
 - [x] Database schema and models
-- [x] User authentication system
+- [x] Basic user authentication system
 - [x] Basic tournament and pick management
 - [x] Initial UI and navigation
 
-### Phase 2 (Planned)
+### Phase 2 ✅ (Complete)
+- [x] Enhanced user management system
+- [x] Admin user roles and permissions
+- [x] Profile management and editing
+- [x] Password reset functionality
+- [x] Session security improvements
+
+### Phase 3 (In Progress)
 - [ ] Enhanced pick validation and rules
 - [ ] Automated scoring system
 - [ ] Email notifications
 - [ ] Advanced leaderboards and statistics
 - [ ] Tournament administration tools
-
-### Phase 3 (Future)
-- [ ] Real-time tournament data integration
-- [ ] Mobile app support
-- [ ] Social features and groups
-- [ ] Payment integration for entry fees
-- [ ] Advanced analytics and reports
+- [ ] Password change functionality
 
 ## 🤝 Contributing
 
@@ -169,9 +179,12 @@ If you encounter any issues or have questions:
   * Database schema defined
   * Need import/management interface
 
-* **User System**: 🔄 To do
-  * Authentication needed
-  * User profiles and permissions
+* **User System**: ✅ Complete
+  * Authentication implemented
+  * Profile management implemented
+  * Admin controls implemented
+  * Password reset functionality working
+  * (Coming Soon: Password change feature)
 
 * **Leaderboards**: 🔄 Partial
   * Basic display implemented
