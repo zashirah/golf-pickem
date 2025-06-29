@@ -3,6 +3,13 @@ __pycache__/
 *.py[cod]
 *$py.class
 
+# Development helper files
+*phase1*.py
+PHASE1_FINAL.py
+PHASE1_STATUS.md
+complete_phase1.py
+verify_phase1.py
+
 # C extensions
 *.so
 
@@ -48,6 +55,14 @@ coverage.xml
 *.cover
 *.py,cover
 .hypothesis/
+
+# Project specific
+fasthtml.txt
+*.db
+.sesskey
+.ipynb_checkpoints/
+.virtual_documents/
+Untitled*.ipynb
 .pytest_cache/
 cover/
 
@@ -169,3 +184,51 @@ cython_debug/
 
 # PyPI configuration file
 .pypirc
+
+# FastHTML specific
+.sesskey
+.virtual_documents/
+
+# Database files (keep structure, ignore data)
+data/*.db
+data/*.sqlite
+data/*.sqlite3
+!data/.gitkeep
+
+# Static file builds
+static/dist/
+static/build/
+
+# IDE and Editor files
+.vscode/settings.json
+.vscode/launch.json
+.idea/
+*.swp
+*.swo
+*~
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.temp
+*.log
+
+# Node.js (if using any frontend build tools)
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Environment variables
+.env.local
+.env.development
+.env.test
+.env.production
