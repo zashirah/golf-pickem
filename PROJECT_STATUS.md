@@ -49,6 +49,9 @@ golf-pickem/
 - [x] Tournament selector on leaderboard (view active or completed tournaments)
 - [x] Status badges on leaderboard (Live/Final)
 - [x] **Split app.py routes into separate route modules** (home, picks, leaderboard, admin)
+- [x] **Tournament sync validation** - Prevents syncing incorrect tournament data by validating API event_name against selected tournament
+- [x] **Production-ready logging** - Replaced all print() statements with proper logging for debugging and monitoring
+- [x] **Mobile-first CSS implementation** - Card layouts, expandable leaderboard entries, touch-optimized UI
 
 ## In Progress
 - [ ] _None currently_
@@ -181,6 +184,30 @@ _Add notes here at the end of each session to provide context for the next one._
   - Each route module has a `setup_*_routes(app)` function
   - Consistent use of `get_db()` and `get_current_user()` helpers
   - Better separation of concerns
+
+### Session: 2026-01-19 (Late Evening)
+- **Fixed critical tournament sync bug:**
+  - DataGolf API returns data for current live tournament, not selected tournament
+  - Added `_tournament_names_match()` helper with fuzzy matching for validation
+  - Sync operations now validate API `event_name` matches selected tournament before updating DB
+  - Prevents incorrect data (e.g., Sony Open scores populating American Express results)
+  - Cleared 120 incorrect results from test American Express tournament
+- **Production readiness improvements:**
+  - Replaced all `print()` statements with proper `logging` module
+  - Added `.gitignore` entries for Python cache, environment files, data files
+  - Improved error handling in sync operations with detailed log messages
+- **UI/UX enhancements:**
+  - Changed "MC" display to "-" for tournaments that haven't started
+  - Enabled deleting last pick (removed restriction)
+  - Added Save button at top of picks form for easier access
+  - Added `data_tier` attributes to picks table cells for mobile labels
+- **Mobile-first CSS implementation:**
+  - Added `.mobile-only` and `.desktop-only` visibility classes with 768px breakpoint
+  - Implemented card layouts for mobile: header, buttons, picks, entries, leaderboard
+  - Created expandable leaderboard cards using native `<details>`/`<summary>` elements
+  - Mobile cards show: rank, player name, total score (collapsed), golfer details (expandable)
+  - Removed conflicting old table-to-card transformation CSS
+  - Optimized for 375px mobile width with proper touch targets and spacing
 
 ---
 *Last updated: 2026-01-19*

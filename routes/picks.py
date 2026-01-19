@@ -176,10 +176,10 @@ def _render_summary_view(tournament, all_user_picks, next_entry, locked_msg,
         table_rows.append(
             Tr(
                 Td(f"Entry {e_num}", cls="entry-num"),
-                Td(get_golfer_name(p.tier1_golfer_id)),
-                Td(get_golfer_name(p.tier2_golfer_id)),
-                Td(get_golfer_name(p.tier3_golfer_id)),
-                Td(get_golfer_name(p.tier4_golfer_id)),
+                Td(get_golfer_name(p.tier1_golfer_id), data_tier="Tier 1:"),
+                Td(get_golfer_name(p.tier2_golfer_id), data_tier="Tier 2:"),
+                Td(get_golfer_name(p.tier3_golfer_id), data_tier="Tier 3:"),
+                Td(get_golfer_name(p.tier4_golfer_id), data_tier="Tier 4:"),
                 Td(
                     Div(
                         A("Edit", href=f"/picks?edit={e_num}", cls="btn btn-sm btn-primary"),

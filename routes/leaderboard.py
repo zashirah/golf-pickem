@@ -195,16 +195,85 @@ def setup_leaderboard_routes(app):
             else:
                 total_display = format_score(total)
 
-            return Tr(
-                Td(str(standing.rank) if standing and standing.rank else "-", cls="rank"),
+            rank_display = str(standing.rank) if standing and standing.rank else "-"
+            is_current = u and u.id == user.id
+
+            # Build golfer detail rows for mobile expandable view
+            def golfer_detail(tier_num, golfer_id, score):
+                name = get_golfer_name(golfer_id)
+                result = results.get(golfer_id)
+
+                if score is None:
+                    if not has_results:
+                        score_display = "-"
+                    elif result and result.status in ('cut', 'mc'):
+                        score_display = "MC"
+                    elif result and result.status == 'wd':
+                        score_display = "WD"
+                    elif result and result.status == 'dq':
+                        score_display = "DQ"
+                    elif result is None:
+                        score_display = "-"
+                    else:
+                        score_display = "E"
+                else:
+                    score_display = format_score(score)
+
+                thru_info = ""
+                if result and result.thru and tournament.status == 'active':
+                    if result.thru == 18:
+                        thru_info = " (F)"
+                    else:
+                        thru_info = f" ({result.thru})"
+
+                score_cls = ""
+                if score is not None:
+                    if score < 0:
+                        score_cls = "under-par"
+                    elif score > 0:
+                        score_cls = "over-par"
+                elif result and result.status in ('cut', 'mc'):
+                    score_cls = "missed-cut"
+
+                return Div(
+                    Span(f"T{tier_num}", cls="detail-tier"),
+                    Span(name, cls="detail-name"),
+                    Span(f"{score_display}{thru_info}", cls=f"detail-score {score_cls}"),
+                    cls="golfer-detail-row"
+                )
+
+            # Mobile expandable card (hidden on desktop, shown on mobile via CSS)
+            mobile_card = Div(
+                Details(
+                    Summary(
+                        Span(rank_display, cls="card-rank"),
+                        Span(display_name, cls="card-player"),
+                        Span(total_display, cls="card-total"),
+                    ),
+                    Div(
+                        golfer_detail(1, pick.tier1_golfer_id, t1_score),
+                        golfer_detail(2, pick.tier2_golfer_id, t2_score),
+                        golfer_detail(3, pick.tier3_golfer_id, t3_score),
+                        golfer_detail(4, pick.tier4_golfer_id, t4_score),
+                        cls="golfer-details"
+                    ),
+                ),
+                cls=f"leaderboard-card {'current-user-card' if is_current else ''}"
+            )
+
+            # Desktop table row (hidden on mobile via CSS)
+            desktop_row = Tr(
+                Td(rank_display, cls="rank"),
                 Td(display_name, cls="player-name"),
                 cell(pick.tier1_golfer_id, t1_score),
                 cell(pick.tier2_golfer_id, t2_score),
                 cell(pick.tier3_golfer_id, t3_score),
                 cell(pick.tier4_golfer_id, t4_score),
                 Td(total_display, cls="total"),
-                cls="current-user" if u and u.id == user.id else ""
+                cls=f"desktop-row {'current-user' if is_current else ''}"
             )
+
+            return (desktop_row, mobile_card)
 
         # Sort by standings if available, otherwise just show picks
         # DQ entries (None total) sort to bottom
@@ -224,6 +293,15 @@ def setup_leaderboard_routes(app):
         elif tournament.status == 'completed':
             status_badge = Span("Final", cls="badge badge-final")
 
+        # Build rows and cards
+        if all_picks:
+            rows_and_cards = [pick_row(p, i+1) for i, p in enumerate(all_picks)]
+            desktop_rows = [r[0] for r in rows_and_cards]
+            mobile_cards = [r[1] for r in rows_and_cards]
+        else:
+            desktop_rows = []
+            mobile_cards = []
+
         return page_shell(
             "Leaderboard",
             Div(
@@ -237,6 +315,7 @@ def setup_leaderboard_routes(app):
                     cls="leaderboard-header"
                 ),
                 P("Best 2 of 4 scores against par. Lowest total wins."),
+                # Desktop table (hidden on mobile)
                 Table(
                     Thead(
                         Tr(
@@ -245,9 +324,15 @@ def setup_leaderboard_routes(app):
                             Th("Best 2", cls="total-header")
                         )
                     ),
-                    Tbody(*[pick_row(p, i+1) for i, p in enumerate(all_picks)]),
-                    cls="leaderboard-table"
-                ) if all_picks else P("No picks yet for this tournament."),
+                    Tbody(*desktop_rows),
+                    cls="leaderboard-table desktop-only"
+                ) if all_picks else None,
+                # Mobile cards (hidden on desktop)
+                Div(
+                    *mobile_cards,
+                    cls="leaderboard-cards mobile-only"
+                ) if all_picks else None,
+                P("No picks yet for this tournament.") if not all_picks else None,
                 A("Make Picks", href="/picks", cls="btn btn-primary") if tournament.status == 'active' else None,
                 cls="leaderboard-page"
             ),
