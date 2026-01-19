@@ -33,6 +33,7 @@ class AppSetting:
 class Tournament:
     id: int
     datagolf_id: Optional[str] = None
+    datagolf_name: Optional[str] = None  # Exact event name from DataGolf API for matching
     name: str = ""
     start_date: Optional[str] = None
     end_date: Optional[str] = None

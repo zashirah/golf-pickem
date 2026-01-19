@@ -165,20 +165,21 @@ def setup_admin_routes(app):
 
     @app.post("/admin/sync-results")
     def sync_results(request, tournament_id: int):
-        db = get_db()
+        db_module = get_db()
         user = get_current_user(request)
         if not user or not user.is_admin:
             return RedirectResponse("/", status_code=303)
 
         from services.datagolf import DataGolfClient
         from services.scoring import ScoringService
+        from sqlalchemy import text
 
         client = DataGolfClient()
-        scoring = ScoringService(db)
+        scoring = ScoringService(db_module)
 
         # Get the tournament we're trying to sync
         tournament = None
-        for t in db.tournaments():
+        for t in db_module.tournaments():
             if t.id == tournament_id:
                 tournament = t
                 break
@@ -200,8 +201,12 @@ def setup_admin_routes(app):
             live_stats = live_data.get('live_stats', [])
 
             # Get golfer lookup
-            golfers_by_dg_id = {g.datagolf_id: g for g in db.golfers()}
+            golfers_by_dg_id = {g.datagolf_id: g for g in db_module.golfers()}
 
+            # Build batch data for results
+            now = datetime.now().isoformat()
+            results_data = []
+            
             for player in live_stats:
                 dg_id = str(player.get('dg_id', ''))
                 golfer = golfers_by_dg_id.get(dg_id)
@@ -215,7 +220,6 @@ def setup_admin_routes(app):
                 status = 'active'
 
                 if pos_str:
-                    # Remove "T" prefix for tied positions
                     pos_clean = pos_str.replace('T', '').strip()
                     if pos_clean.isdigit():
                         position = int(pos_clean)
@@ -229,32 +233,49 @@ def setup_admin_routes(app):
                 score_to_par = player.get('total')
                 thru = player.get('thru')
                 round_num = player.get('round')
+                
+                results_data.append({
+                    'tournament_id': tournament_id,
+                    'golfer_id': golfer.id,
+                    'position': position,
+                    'score_to_par': score_to_par,
+                    'status': status,
+                    'round_num': round_num,
+                    'thru': thru,
+                    'updated_at': now
+                })
 
-                # Upsert result
-                existing = [r for r in db.tournament_results()
-                            if r.tournament_id == tournament_id and r.golfer_id == golfer.id]
-
-                if existing:
-                    db.tournament_results.update(
-                        id=existing[0].id,
-                        position=position,
-                        score_to_par=score_to_par,
-                        status=status,
-                        round_num=round_num,
-                        thru=thru,
-                        updated_at=datetime.now().isoformat()
-                    )
-                else:
-                    db.tournament_results.insert(
-                        tournament_id=tournament_id,
-                        golfer_id=golfer.id,
-                        position=position,
-                        score_to_par=score_to_par,
-                        status=status,
-                        round_num=round_num,
-                        thru=thru,
-                        updated_at=datetime.now().isoformat()
-                    )
+            # Batch upsert results using raw SQL
+            if results_data:
+                logger.info(f"Batch upserting {len(results_data)} tournament results...")
+                with db_module.db.engine.connect() as conn:
+                    # Delete existing results for this tournament first
+                    conn.execute(text("DELETE FROM tournament_result WHERE tournament_id = :tid"), 
+                                {"tid": tournament_id})
+                    
+                    # Build batch INSERT
+                    values_list = []
+                    params = {}
+                    for i, r in enumerate(results_data):
+                        values_list.append(f"(:tid_{i}, :gid_{i}, :pos_{i}, :score_{i}, :status_{i}, :round_{i}, :thru_{i}, :updated_{i})")
+                        params[f"tid_{i}"] = r['tournament_id']
+                        params[f"gid_{i}"] = r['golfer_id']
+                        params[f"pos_{i}"] = r['position']
+                        params[f"score_{i}"] = r['score_to_par']
+                        params[f"status_{i}"] = r['status']
+                        params[f"round_{i}"] = r['round_num']
+                        params[f"thru_{i}"] = r['thru']
+                        params[f"updated_{i}"] = r['updated_at']
+                    
+                    sql = f"""
+                        INSERT INTO tournament_result 
+                        (tournament_id, golfer_id, position, score_to_par, status, round_num, thru, updated_at)
+                        VALUES {', '.join(values_list)}
+                    """
+                    conn.execute(text(sql), params)
+                    conn.commit()
+                
+                logger.info(f"Synced {len(results_data)} results for tournament {tournament_id}")
 
             # Calculate standings
             scoring.calculate_standings(tournament_id)
@@ -266,67 +287,104 @@ def setup_admin_routes(app):
 
     @app.post("/admin/sync")
     def sync_datagolf(request):
-        db = get_db()
+        db_module = get_db()
         user = get_current_user(request)
         if not user or not user.is_admin:
             return RedirectResponse("/", status_code=303)
 
         from services.datagolf import DataGolfClient
+        from sqlalchemy import text
 
         client = DataGolfClient()
 
         try:
-            # Sync players
+            # Sync players - top 400 to cover full tournament fields
+            logger.info("Starting DataGolf sync - fetching rankings...")
+            rankings = client.get_rankings()[:400]  # Top 400 covers most tournament fields
+            logger.info(f"Fetched {len(rankings)} rankings from DataGolf")
+            
+            # Get player list to lookup names/countries
             players = client.get_player_list()
-            rankings = client.get_rankings()
-
-            # Create skill lookup
-            skill_by_id = {}
-            for r in rankings:
-                dg_id = str(r.get('dg_id', ''))
-                skill_by_id[dg_id] = r.get('dg_skill_estimate', 0)
-
+            logger.info(f"Fetched {len(players)} players from DataGolf")
+            
+            # Create player info lookup by dg_id
+            player_info = {}
             for p in players:
                 dg_id = str(p.get('dg_id', ''))
-                name = p.get('player_name', '')
-                country = p.get('country', '')
+                player_info[dg_id] = {
+                    'name': p.get('player_name', ''),
+                    'country': p.get('country', '')
+                }
 
-                existing = [g for g in db.golfers() if g.datagolf_id == dg_id]
+            # Build VALUES clause for single batch INSERT
+            now = datetime.now().isoformat()
+            values_list = []
+            params = {}
+            for i, r in enumerate(rankings):
+                dg_id = str(r.get('dg_id', ''))
+                skill = r.get('dg_skill_estimate', 0)
+                info = player_info.get(dg_id, {})
+                name = info.get('name', r.get('player_name', ''))
+                country = info.get('country', '')
+                
+                values_list.append(f"(:dg_id_{i}, :name_{i}, :country_{i}, :skill_{i}, :updated_at_{i})")
+                params[f"dg_id_{i}"] = dg_id
+                params[f"name_{i}"] = name
+                params[f"country_{i}"] = country
+                params[f"skill_{i}"] = skill
+                params[f"updated_at_{i}"] = now
+            
+            # Single batch INSERT with ON CONFLICT (1 query instead of 200!)
+            logger.info(f"Batch inserting {len(values_list)} golfers in single query...")
+            with db_module.db.engine.connect() as conn:
+                sql = f"""
+                    INSERT INTO golfer (datagolf_id, name, country, dg_skill, updated_at)
+                    VALUES {', '.join(values_list)}
+                    ON CONFLICT (datagolf_id) DO UPDATE SET
+                        name = EXCLUDED.name,
+                        country = EXCLUDED.country,
+                        dg_skill = EXCLUDED.dg_skill,
+                        updated_at = EXCLUDED.updated_at
+                """
+                conn.execute(text(sql), params)
+                conn.commit()
+            
+            logger.info(f"Synced {len(rankings)} ranked players to database")
 
-                if existing:
-                    db.golfers.update(
-                        id=existing[0].id,
-                        name=name,
-                        country=country,
-                        dg_skill=skill_by_id.get(dg_id, 0),
-                        updated_at=datetime.now().isoformat()
-                    )
-                else:
-                    db.golfers.insert(
-                        datagolf_id=dg_id,
-                        name=name,
-                        country=country,
-                        dg_skill=skill_by_id.get(dg_id, 0),
-                        updated_at=datetime.now().isoformat()
-                    )
-
-            # Sync schedule
+            # Sync schedule - just 5 tournaments
+            logger.info("Fetching tournament schedule...")
             schedule = client.get_schedule()
-            for event in schedule[:10]:  # Just recent/upcoming
+            logger.info(f"Fetched {len(schedule)} tournaments from schedule")
+            
+            # Build batch insert for tournaments too
+            tournament_values = []
+            tournament_params = {}
+            for i, event in enumerate(schedule[:5]):  # Just 5 upcoming
                 event_id = str(event.get('event_id', ''))
                 name = event.get('event_name', '')
                 start = event.get('start_date', '')
-
-                existing = [t for t in db.tournaments() if t.datagolf_id == event_id]
-
-                if not existing:
-                    db.tournaments.insert(
-                        datagolf_id=event_id,
-                        name=name,
-                        start_date=start,
-                        status='upcoming',
-                        created_at=datetime.now().isoformat()
-                    )
+                
+                tournament_values.append(f"(:event_id_{i}, :dg_name_{i}, :name_{i}, :start_{i}, 'upcoming', :created_at_{i})")
+                tournament_params[f"event_id_{i}"] = event_id
+                tournament_params[f"dg_name_{i}"] = name  # Store exact DataGolf name for matching
+                tournament_params[f"name_{i}"] = name
+                tournament_params[f"start_{i}"] = start
+                tournament_params[f"created_at_{i}"] = now
+            
+            if tournament_values:
+                with db_module.db.engine.connect() as conn:
+                    sql = f"""
+                        INSERT INTO tournament (datagolf_id, datagolf_name, name, start_date, status, created_at)
+                        VALUES {', '.join(tournament_values)}
+                        ON CONFLICT (datagolf_id) DO UPDATE SET
+                            datagolf_name = EXCLUDED.datagolf_name,
+                            name = EXCLUDED.name,
+                            start_date = EXCLUDED.start_date
+                    """
+                    conn.execute(text(sql), tournament_params)
+                    conn.commit()
+            
+            logger.info(f"Sync complete: {len(rankings)} players, {len(tournament_values)} tournaments")
 
         except Exception as e:
             logger.error(f"Sync error: {e}", exc_info=True)
@@ -398,10 +456,9 @@ def setup_admin_routes(app):
             "Tournament Field",
             Div(
                 H1(f"Field: {tournament.name}"),
-                Form(
-                    Button("Auto-Assign Tiers from DataGolf", type="submit", cls="btn btn-primary"),
-                    action=f"/admin/tournament/{tid}/field/auto",
-                    method="post"
+                A(
+                    Button("Auto-Assign Tiers from DataGolf", type="button", cls="btn btn-primary"),
+                    href=f"/admin/tournament/{tid}/field/auto-confirm"
                 ),
                 Div(
                     tier_table(1),
@@ -425,9 +482,10 @@ def setup_admin_routes(app):
         db.tournament_field.update(id=field_id, tier=tier)
         return RedirectResponse(f"/admin/tournament/{tid}/field", status_code=303)
 
-    @app.post("/admin/tournament/{tid}/field/auto")
-    def auto_assign_tiers(request, tid: int):
-        db = get_db()
+    @app.get("/admin/tournament/{tid}/field/auto-confirm")
+    def auto_assign_confirm_page(request, tid: int):
+        """Show confirmation page before auto-assigning tiers."""
+        db_module = get_db()
         user = get_current_user(request)
         if not user or not user.is_admin:
             return RedirectResponse("/", status_code=303)
@@ -435,7 +493,136 @@ def setup_admin_routes(app):
         from services.datagolf import DataGolfClient
 
         tournament = None
-        for t in db.tournaments():
+        for t in db_module.tournaments():
+            if t.id == tid:
+                tournament = t
+                break
+
+        if not tournament:
+            return RedirectResponse("/admin", status_code=303)
+
+        client = DataGolfClient()
+        
+        try:
+            field_data = client.get_field_updates()
+            dg_event_name = field_data.get('event_name', 'Unknown')
+            field_players = field_data.get('field', [])
+            
+            # Check if tournament matches
+            is_match = tournament.datagolf_name and tournament.datagolf_name == dg_event_name
+            
+            # Get golfers from DB to see which are missing
+            golfers_by_dg_id = {g.datagolf_id: g for g in db_module.golfers()}
+            
+            matched = []
+            missing = []
+            for p in field_players:
+                dg_id = str(p.get('dg_id', ''))
+                player_name = p.get('player_name', 'Unknown')
+                if dg_id in golfers_by_dg_id:
+                    matched.append((golfers_by_dg_id[dg_id], p))
+                else:
+                    missing.append(p)
+            
+            # Sort matched by skill for tier preview
+            matched.sort(key=lambda x: x[0].dg_skill or 0, reverse=True)
+            
+            # Build tier preview
+            tier_counts = {1: 0, 2: 0, 3: 0, 4: 0}
+            for i, (g, p) in enumerate(matched):
+                if i < 6:
+                    tier_counts[1] += 1
+                elif i < 24:
+                    tier_counts[2] += 1
+                elif i < 60:
+                    tier_counts[3] += 1
+                else:
+                    tier_counts[4] += 1
+            
+            match_status = Div(
+                Span("✅ Tournament matches DataGolf event", cls="text-success") if is_match else
+                Span(f"⚠️ Tournament mismatch! DB: '{tournament.datagolf_name or tournament.name}' vs DataGolf: '{dg_event_name}'", cls="text-warning"),
+                cls="match-status"
+            )
+            
+            return page_shell(
+                "Confirm Auto-Assign Tiers",
+                Div(
+                    H1("Confirm Auto-Assign Tiers"),
+                    match_status,
+                    Div(
+                        H3("Tournament Details"),
+                        P(Strong("Target Tournament: "), tournament.name),
+                        P(Strong("DataGolf Event: "), dg_event_name),
+                        P(Strong("Start Date: "), tournament.start_date or "Unknown"),
+                        cls="tournament-info"
+                    ),
+                    Div(
+                        H3("Field Summary"),
+                        P(f"Total players in DataGolf field: {len(field_players)}"),
+                        P(f"Players found in database: {len(matched)}"),
+                        P(f"Players to be created: {len(missing)}", cls="text-info") if missing else None,
+                        cls="field-summary"
+                    ),
+                    Div(
+                        H3("Tier Distribution Preview"),
+                        Ul(
+                            Li(f"Tier 1: {tier_counts[1]} golfers (top 6)"),
+                            Li(f"Tier 2: {tier_counts[2]} golfers (next 18)"),
+                            Li(f"Tier 3: {tier_counts[3]} golfers (next 36)"),
+                            Li(f"Tier 4: {tier_counts[4]} golfers (rest)")
+                        ),
+                        cls="tier-preview"
+                    ),
+                    Div(
+                        H3(f"Players to be Created ({len(missing)})") if missing else None,
+                        Ul(*[Li(f"{p.get('player_name', 'Unknown')} ({p.get('country', 'Unknown')})") for p in missing[:20]]) if missing else None,
+                        P(f"...and {len(missing) - 20} more") if len(missing) > 20 else None,
+                        cls="missing-players"
+                    ) if missing else None,
+                    Div(
+                        Form(
+                            Button("✓ Confirm & Assign Tiers", type="submit", cls="btn btn-primary"),
+                            action=f"/admin/tournament/{tid}/field/auto",
+                            method="post",
+                            style="display: inline-block; margin-right: 10px;"
+                        ) if is_match else Span(
+                            "Cannot assign tiers - tournament doesn't match current DataGolf event. ",
+                            "Tier assignment is only available during the tournament's week.",
+                            cls="text-danger"
+                        ),
+                        A("← Cancel", href=f"/admin/tournament/{tid}/field", cls="btn btn-secondary"),
+                        cls="actions",
+                        style="margin-top: 20px;"
+                    ),
+                    cls="confirm-page"
+                ),
+                user=user
+            )
+        except Exception as e:
+            logger.error(f"Error fetching field data: {e}", exc_info=True)
+            return page_shell(
+                "Error",
+                Div(
+                    H1("Error Fetching Field Data"),
+                    P(f"Could not fetch field data from DataGolf: {str(e)}"),
+                    A("← Back", href=f"/admin/tournament/{tid}/field", cls="btn btn-secondary")
+                ),
+                user=user
+            )
+
+    @app.post("/admin/tournament/{tid}/field/auto")
+    def auto_assign_tiers(request, tid: int):
+        db_module = get_db()
+        user = get_current_user(request)
+        if not user or not user.is_admin:
+            return RedirectResponse("/", status_code=303)
+
+        from services.datagolf import DataGolfClient
+        from sqlalchemy import text
+
+        tournament = None
+        for t in db_module.tournaments():
             if t.id == tid:
                 tournament = t
                 break
@@ -448,27 +635,81 @@ def setup_admin_routes(app):
         try:
             # Get current field from DataGolf
             field_data = client.get_field_updates()
+            dg_event_name = field_data.get('event_name', '')
             field_players = field_data.get('field', [])
 
+            # Validate tournament matches DataGolf event
+            if not tournament.datagolf_name or tournament.datagolf_name != dg_event_name:
+                logger.warning(f"Tournament mismatch: DB='{tournament.datagolf_name}' vs DataGolf='{dg_event_name}'")
+                return RedirectResponse(f"/admin/tournament/{tid}/field?error=mismatch", status_code=303)
+
             # Get all golfers from DB
-            golfers_by_dg_id = {g.datagolf_id: g for g in db.golfers()}
+            golfers_by_dg_id = {g.datagolf_id: g for g in db_module.golfers()}
 
-            # Clear existing field for this tournament
-            for f in db.tournament_field():
-                if f.tournament_id == tid:
-                    db.tournament_field.delete(f.id)
+            # Find golfers to create (not in DB)
+            golfers_to_create = []
+            for p in field_players:
+                dg_id = str(p.get('dg_id', ''))
+                if dg_id and dg_id not in golfers_by_dg_id:
+                    golfers_to_create.append(p)
 
-            # Sort by skill and assign tiers
+            # Batch create missing golfers
+            if golfers_to_create:
+                now = datetime.now().isoformat()
+                values_list = []
+                params = {}
+                for i, p in enumerate(golfers_to_create):
+                    dg_id = str(p.get('dg_id', ''))
+                    # Parse name from "Last, First" format
+                    raw_name = p.get('player_name', '')
+                    if ', ' in raw_name:
+                        last, first = raw_name.split(', ', 1)
+                        name = f"{first} {last}"
+                    else:
+                        name = raw_name
+                    country = p.get('country', '')
+                    
+                    values_list.append(f"(:dg_id_{i}, :name_{i}, :country_{i}, :updated_at_{i})")
+                    params[f"dg_id_{i}"] = dg_id
+                    params[f"name_{i}"] = name
+                    params[f"country_{i}"] = country
+                    params[f"updated_at_{i}"] = now
+                
+                logger.info(f"Creating {len(golfers_to_create)} missing golfers from field...")
+                with db_module.db.engine.connect() as conn:
+                    sql = f"""
+                        INSERT INTO golfer (datagolf_id, name, country, updated_at)
+                        VALUES {', '.join(values_list)}
+                        ON CONFLICT (datagolf_id) DO NOTHING
+                    """
+                    conn.execute(text(sql), params)
+                    conn.commit()
+                
+                # Refresh golfer lookup after creating new ones
+                golfers_by_dg_id = {g.datagolf_id: g for g in db_module.golfers()}
+                logger.info(f"Created {len(golfers_to_create)} golfers")
+
+            # Build field list with all matching golfers
             field_with_skill = []
+            matched_count = 0
+            skipped_count = 0
             for p in field_players:
                 dg_id = str(p.get('dg_id', ''))
                 golfer = golfers_by_dg_id.get(dg_id)
                 if golfer:
                     field_with_skill.append(golfer)
+                    matched_count += 1
+                else:
+                    skipped_count += 1
+                    logger.warning(f"Skipped golfer not in DB: {p.get('player_name', 'Unknown')} (dg_id: {dg_id})")
+
+            logger.info(f"Field matching: {matched_count} matched, {skipped_count} skipped, {len(golfers_to_create)} created")
 
             field_with_skill.sort(key=lambda g: g.dg_skill or 0, reverse=True)
 
-            # Assign tiers: Top 6, next 18, next 36, rest
+            # Build batch data: Top 6 = Tier 1, next 18 = Tier 2, next 36 = Tier 3, rest = Tier 4
+            now = datetime.now().isoformat()
+            field_data_list = []
             for i, golfer in enumerate(field_with_skill):
                 if i < 6:
                     tier = 1
@@ -478,13 +719,33 @@ def setup_admin_routes(app):
                     tier = 3
                 else:
                     tier = 4
+                field_data_list.append((tid, golfer.id, tier, now))
 
-                db.tournament_field.insert(
-                    tournament_id=tid,
-                    golfer_id=golfer.id,
-                    tier=tier,
-                    created_at=datetime.now().isoformat()
-                )
+            # Batch operation: delete old, insert new
+            logger.info(f"Batch assigning {len(field_data_list)} golfers to tiers for tournament {tid}...")
+            with db_module.db.engine.connect() as conn:
+                # Delete existing field for this tournament
+                conn.execute(text("DELETE FROM tournament_field WHERE tournament_id = :tid"), {"tid": tid})
+                
+                # Build batch INSERT
+                if field_data_list:
+                    values_list = []
+                    params = {}
+                    for i, (t_id, g_id, tier, created) in enumerate(field_data_list):
+                        values_list.append(f"(:tid_{i}, :gid_{i}, :tier_{i}, :created_{i})")
+                        params[f"tid_{i}"] = t_id
+                        params[f"gid_{i}"] = g_id
+                        params[f"tier_{i}"] = tier
+                        params[f"created_{i}"] = created
+                    
+                    sql = f"""
+                        INSERT INTO tournament_field (tournament_id, golfer_id, tier, created_at)
+                        VALUES {', '.join(values_list)}
+                    """
+                    conn.execute(text(sql), params)
+                conn.commit()
+            
+            logger.info(f"Assigned {len(field_data_list)} golfers to tiers")
 
         except Exception as e:
             logger.error(f"Auto-assign error: {e}", exc_info=True)

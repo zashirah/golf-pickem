@@ -4,8 +4,16 @@ This is the entry point for the application. It initializes the database,
 services, and registers all routes from their respective modules.
 """
 import os
+import logging
 
 from fasthtml.common import *
+
+# Configure logging
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 from db import init_db
 import db as db_module

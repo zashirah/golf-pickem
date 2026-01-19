@@ -58,6 +58,7 @@ golf-pickem/
 
 ## Next Steps / Backlog
 - [ ] **PostgreSQL/Supabase integration** - Replace SQLite with Postgres for production; wire `DATABASE_URL`, migrations, and deployment docs
+- [ ] **Upgrade password hashing to bcrypt** - Current implementation uses SHA-256 with salt, which works but bcrypt/argon2 is more secure for password storage (resistant to GPU attacks, configurable work factor). Low priority for MVP but should be done before public launch.
 - [ ] **Automatic tournament status updates** - Set tournaments to "active" on Thursday (tournament start) and "completed" after Sunday. Consider Tuesday-Monday as "tournament week" for picks.
 - [ ] Add input validation layer
 - [ ] Improve error handling (currently silent in sync operations)

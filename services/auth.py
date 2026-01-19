@@ -1,8 +1,11 @@
 """Authentication service - sessions, password hashing, invites."""
 import hashlib
 import secrets
+import logging
 from datetime import datetime, timedelta
 from config import SESSION_DAYS
+
+logger = logging.getLogger(__name__)
 
 
 def hash_password(password: str) -> str:
@@ -104,22 +107,45 @@ class AuthService:
 
     def login(self, username: str, password: str) -> tuple:
         """Authenticate user. Returns (session_token, error_message)."""
-        users = [u for u in self.db.users() if u.username == username]
+        logger.info(f"Login attempt for username: {username}")
+        
+        # Fetch all users and check for username
+        all_users = list(self.db.users())
+        logger.debug(f"Total users in database: {len(all_users)}")
+        
+        users = [u for u in all_users if u.username == username]
         if not users:
+            logger.warning(f"Login failed: username '{username}' not found")
+            logger.debug(f"Available usernames: {[u.username for u in all_users]}")
             return None, "Invalid username or password"
 
         user = users[0]
-        if not verify_password(password, user.password_hash):
+        logger.debug(f"Found user: id={user.id}, username={user.username}, is_admin={user.is_admin}")
+        logger.debug(f"Stored password hash: {user.password_hash[:20]}...")
+        
+        # Verify password
+        password_valid = verify_password(password, user.password_hash)
+        logger.debug(f"Password verification result: {password_valid}")
+        
+        if not password_valid:
+            logger.warning(f"Login failed: invalid password for username '{username}'")
             return None, "Invalid username or password"
 
         # Create session
+        logger.info(f"Login successful for user '{username}' (id={user.id})")
         token = generate_session_token()
-        self.db.sessions.insert(
-            user_id=user.id,
-            token=token,
-            expires_at=get_session_expiry(),
-            created_at=datetime.now().isoformat()
-        )
+        
+        try:
+            self.db.sessions.insert(
+                user_id=user.id,
+                token=token,
+                expires_at=get_session_expiry(),
+                created_at=datetime.now().isoformat()
+            )
+            logger.debug(f"Session created successfully for user {user.id}")
+        except Exception as e:
+            logger.error(f"Failed to create session: {e}", exc_info=True)
+            return None, "Login failed. Please try again."
 
         return token, None
 
