@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Golf Pick'em is a fantasy golf application where users pick one golfer from each of four tiers for PGA tournaments. Scoring uses the best 2 of 4 picks (lowest combined score-to-par wins). Built with FastHTML (Python HTMX framework) and SQLite.
+Golf Pick'em is a fantasy golf application where users pick one golfer from each of four tiers for PGA tournaments. Scoring uses the best 2 of 4 picks (lowest combined score-to-par wins). Built with FastHTML (Python HTMX framework), with SQLite for local development and PostgreSQL for production.
 
 ## Commands
 
@@ -37,9 +37,9 @@ Routes are in `routes/` with each module exporting a `setup_*_routes(app)` funct
 Route utilities are initialized via `init_routes(auth_service, db_module)` with dependency injection.
 
 ### Database Layer
-- `db/__init__.py` - Database initialization, exposes table references as module-level variables (e.g., `db.users()`, `db.tournaments()`)
+- `db/__init__.py` - Database initialization using fastsql (MiniDataAPI spec), exposes table references as module-level variables (e.g., `db.users()`, `db.tournaments()`)
 - `db/models.py` - Dataclass models (User, Tournament, Pick, etc.) and `create_tables(db)` function
-- Uses FastHTML's built-in SQLite database wrapper
+- Uses fastsql with SQLAlchemy: SQLite locally, PostgreSQL in production
 - Tables auto-created on startup
 
 ### Services
@@ -80,12 +80,11 @@ Route utilities are initialized via `init_routes(auth_service, db_module)` with 
 |----------|----------|-------------|
 | `DATAGOLF_API_KEY` | Yes | DataGolf API key |
 | `SECRET_KEY` | Yes | Session encryption secret |
-| `DATABASE_URL` | No | PostgreSQL URL (not yet implemented - uses SQLite) |
+| `DATABASE_URL` | No | SQLAlchemy connection string. Default: `sqlite:///data/golf_pickem.db`. For PostgreSQL: `postgresql://user:pass@host:5432/dbname` (URL-encode special chars in password) |
 | `PORT` | No | Server port (default: 8000) |
 
 ## Known Tech Debt
 
 - Column naming: `tier*_position` in `pickem_standings` stores scores, not positions
-- PostgreSQL/Supabase integration planned but not implemented
 - No migration system for schema changes
 - No test suite

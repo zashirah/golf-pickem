@@ -7,12 +7,13 @@ load_dotenv()
 
 # Paths
 BASE_DIR = Path(__file__).parent
-DATABASE_PATH = BASE_DIR / "data" / "golf_pickem.db"
+DATA_DIR = BASE_DIR / "data"
+DATABASE_PATH = DATA_DIR / "golf_pickem.db"
 
-# Database - Note: FastHTML uses SQLite natively. 
-# PostgreSQL support via Supabase/DATABASE_URL is on the roadmap.
-# For now, we use SQLite for all environments and plan migration to PostgreSQL ORM for production.
-DATABASE_URL = os.getenv("DATABASE_URL", None)
+# Database - Uses fastsql with SQLAlchemy connection strings
+# Local development: SQLite (no DATABASE_URL set)
+# Production: PostgreSQL via Supabase/Render (set DATABASE_URL env var)
+DATABASE_URL = os.getenv("DATABASE_URL", f"sqlite:///{DATABASE_PATH}")
 
 # DataGolf API
 DATAGOLF_API_KEY = os.getenv("DATAGOLF_API_KEY", "")
