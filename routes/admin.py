@@ -57,7 +57,9 @@ def setup_admin_routes(app):
             return page_shell("Access Denied", card("", P("Admin access required.")), user=user)
 
         invite_secret = auth_service.get_invite_secret()
-        invite_url = f"/register?invite={invite_secret}"
+        invite_path = f"/register?invite={invite_secret}"
+        # Get the full URL including protocol and host
+        invite_url = f"{request.url.scheme}://{request.url.netloc}{invite_path}"
 
         tournaments = list(db.tournaments())
         users = list(db.users())
@@ -75,7 +77,12 @@ def setup_admin_routes(app):
                 card(
                     "Invite Link",
                     P("Share this link for new users to register:"),
-                    Code(invite_url, cls="invite-code"),
+                    Div(
+                        Code(invite_url, id="invite-url", cls="invite-code", style="cursor: pointer;"),
+                        Button("📋 Copy", type="button", cls="btn btn-sm", 
+                               onclick=f"navigator.clipboard.writeText('{invite_url}').then(() => {{ const btn = event.target; btn.textContent = '✓ Copied!'; setTimeout(() => btn.textContent = '📋 Copy', 2000); }})"),
+                        style="display: flex; gap: 10px; align-items: center;"
+                    ),
                     Form(
                         Button("Reset Invite Link", type="submit", cls="btn btn-secondary btn-sm"),
                         action="/admin/reset-invite",
