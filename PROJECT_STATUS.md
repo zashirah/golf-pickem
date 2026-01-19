@@ -57,6 +57,7 @@ golf-pickem/
 - [ ] _None currently_
 
 ## Next Steps / Backlog
+- [ ] **PostgreSQL/Supabase integration** - Replace SQLite with Postgres for production; wire `DATABASE_URL`, migrations, and deployment docs
 - [ ] **Automatic tournament status updates** - Set tournaments to "active" on Thursday (tournament start) and "completed" after Sunday. Consider Tuesday-Monday as "tournament week" for picks.
 - [ ] Add input validation layer
 - [ ] Improve error handling (currently silent in sync operations)

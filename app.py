@@ -3,6 +3,8 @@
 This is the entry point for the application. It initializes the database,
 services, and registers all routes from their respective modules.
 """
+import os
+
 from fasthtml.common import *
 
 from db import init_db
@@ -43,4 +45,5 @@ setup_admin_routes(app)
 # ============ Run Server ============
 
 if __name__ == "__main__":
-    serve()
+    port = int(os.getenv("PORT", 8000))
+    serve(host="0.0.0.0", port=port)

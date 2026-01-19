@@ -50,7 +50,7 @@ App will be available at http://localhost:8000
 
 ## Production Deployment with Supabase
 
-Supabase provides a free PostgreSQL database, solving the persistent storage problem.
+Supabase provides a free PostgreSQL database, solving the persistent storage problem. **Note:** The current MVP build still runs on SQLite. PostgreSQL/Supabase support must be implemented before treating this as production-ready. Until then, Render deploys will have non-persistent data.
 
 ### Setup Supabase
 
@@ -98,7 +98,7 @@ Supabase provides a free PostgreSQL database, solving the persistent storage pro
    git push origin main
    ```
 
-3. **Deploy to Render:**
+3. **Deploy to Render (SQLite for now):**
    - Go to [render.com](https://render.com)
    - Create a new account if needed, connect your GitHub
    - Click "New Web Service"
@@ -108,11 +108,11 @@ Supabase provides a free PostgreSQL database, solving the persistent storage pro
      - Name: `golf-pickem`
      - Runtime: Python 3
      - Build Command: `pip install -r requirements.txt`
-     - Start Command: `python -m fasthtml app:app --host 0.0.0.0 --port 8000`
-   - Add environment variables:
-     - `DATAGOLF_API_KEY`: Your DataGolf API key
-     - `SECRET_KEY`: Generate with `openssl rand -hex 32`
-     - `DATABASE_URL`: Paste your Supabase connection string
+      - Start Command: `python app.py` (Render sets `PORT`; app now binds to `0.0.0.0` automatically)
+    - Add environment variables:
+       - `DATAGOLF_API_KEY`: Your DataGolf API key
+       - `SECRET_KEY`: Generate with `openssl rand -hex 32`
+       - `DATABASE_URL`: (planned) Supabase connection string — **not yet used by the app; pending Postgres support**
    - Click "Create Web Service"
 
 4. **Verify deployment:**
