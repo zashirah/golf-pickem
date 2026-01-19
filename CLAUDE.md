@@ -83,6 +83,17 @@ Route utilities are initialized via `init_routes(auth_service, db_module)` with 
 | `DATABASE_URL` | No | SQLAlchemy connection string. Default: `sqlite:///data/golf_pickem.db`. For PostgreSQL: `postgresql://user:pass@host:5432/dbname` (URL-encode special chars in password) |
 | `PORT` | No | Server port (default: 8000) |
 
+## Deployment Notes
+
+### Render + Supabase
+
+**Important:** Render's free tier only supports IPv4, but Supabase direct connections use IPv6. You must use the **Supavisor pooler** connection string:
+
+- ❌ Direct (IPv6): `postgresql://postgres:pass@db.{project}.supabase.co:5432/postgres`
+- ✅ Pooler (IPv4): `postgresql://postgres.{project}:pass@aws-0-{region}.pooler.supabase.com:6543/postgres`
+
+Get the pooler connection string from Supabase Dashboard → Connect → Transaction/Session pooler.
+
 ## Known Tech Debt
 
 - Column naming: `tier*_position` in `pickem_standings` stores scores, not positions
