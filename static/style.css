@@ -1,167 +1,705 @@
-/* Custom styles for Golf Pickem League */
+/* Golf Pick'em - Clean & Minimal Styles */
 
 :root {
-    --primary-color: #2c3e50;
-    --secondary-color: #3498db;
-    --success-color: #27ae60;
-    --danger-color: #e74c3c;
-    --warning-color: #f39c12;
-    --light-bg: #ecf0f1;
-    --text-dark: #2c3e50;
-    --text-light: #7f8c8d;
+    --color-primary: #2563eb;
+    --color-primary-dark: #1d4ed8;
+    --color-success: #16a34a;
+    --color-error: #dc2626;
+    --color-warning: #ca8a04;
+    --color-gray-50: #f9fafb;
+    --color-gray-100: #f3f4f6;
+    --color-gray-200: #e5e7eb;
+    --color-gray-300: #d1d5db;
+    --color-gray-500: #6b7280;
+    --color-gray-700: #374151;
+    --color-gray-900: #111827;
+    --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    --radius: 8px;
+    --shadow: 0 1px 3px rgba(0,0,0,0.1);
 }
 
-/* Enhanced button styles */
-.btn-tier-1 { background-color: #FF6B6B; border-color: #FF6B6B; }
-.btn-tier-2 { background-color: #4ECDC4; border-color: #4ECDC4; }
-.btn-tier-3 { background-color: #45B7D1; border-color: #45B7D1; }
-.btn-tier-4 { background-color: #96CEB4; border-color: #96CEB4; }
-
-/* Loading states */
-.htmx-request {
-    opacity: 0.6;
-    pointer-events: none;
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
 }
 
-.htmx-indicator {
-    display: none;
+body {
+    font-family: var(--font-sans);
+    color: var(--color-gray-900);
+    background: var(--color-gray-50);
+    line-height: 1.5;
 }
 
-.htmx-request .htmx-indicator {
-    display: inline;
-}
-
-/* Table enhancements */
-table {
-    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-    border-radius: 8px;
-    overflow: hidden;
-}
-
-table th {
-    background-color: var(--primary-color);
-    color: white;
-    font-weight: 600;
-    text-transform: uppercase;
-    font-size: 0.875rem;
-    letter-spacing: 0.5px;
-}
-
-table tr:nth-child(even) {
-    background-color: #f8f9fa;
-}
-
-table tr:hover {
-    background-color: #e3f2fd;
-    transition: background-color 0.2s ease;
-}
-
-/* Form improvements */
-input, select, textarea {
-    transition: border-color 0.2s ease, box-shadow 0.2s ease;
-}
-
-input:focus, select:focus, textarea:focus {
-    border-color: var(--secondary-color);
-    box-shadow: 0 0 0 2px rgba(52, 152, 219, 0.2);
-}
-
-/* Card component */
-.card {
+/* Layout */
+.site-header {
     background: white;
-    border: 1px solid var(--light-bg);
-    border-radius: 8px;
-    padding: 1.5rem;
-    margin: 1rem 0;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    border-bottom: 1px solid var(--color-gray-200);
+    padding: 1rem 2rem;
 }
 
-/* Responsive grid */
-.grid-responsive {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+.header-content {
+    max-width: 1200px;
+    margin: 0 auto;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.logo {
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: var(--color-gray-900);
+    text-decoration: none;
+}
+
+.nav-links {
+    display: flex;
+    gap: 1.5rem;
+}
+
+.nav-link {
+    color: var(--color-gray-700);
+    text-decoration: none;
+    font-weight: 500;
+}
+
+.nav-link:hover {
+    color: var(--color-primary);
+}
+
+.user-section {
+    display: flex;
+    align-items: center;
     gap: 1rem;
 }
 
-/* Status indicators */
-.status-active {
-    color: var(--success-color);
-    font-weight: bold;
+.user-name {
+    color: var(--color-gray-500);
 }
 
-.status-inactive {
-    color: var(--text-light);
+.container {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 2rem;
 }
 
-/* Tier badges */
-.tier-badge {
-    display: inline-block;
-    padding: 0.25rem 0.5rem;
-    border-radius: 12px;
-    font-size: 0.8rem;
-    font-weight: bold;
-    color: white;
+.site-footer {
     text-align: center;
-    min-width: 2rem;
+    padding: 2rem;
+    color: var(--color-gray-500);
+    font-size: 0.875rem;
 }
 
-/* Animation for dynamic content */
-@keyframes fadeIn {
-    from { opacity: 0; transform: translateY(10px); }
-    to { opacity: 1; transform: translateY(0); }
+/* Buttons */
+.btn {
+    display: inline-block;
+    padding: 0.5rem 1rem;
+    font-size: 0.875rem;
+    font-weight: 500;
+    text-decoration: none;
+    border-radius: var(--radius);
+    border: 1px solid var(--color-gray-300);
+    background: white;
+    color: var(--color-gray-700);
+    cursor: pointer;
+    transition: all 0.15s;
 }
 
-.htmx-added {
-    animation: fadeIn 0.3s ease-out;
+.btn:hover {
+    background: var(--color-gray-50);
 }
 
-/* Mobile responsiveness */
-@media (max-width: 768px) {
-    .grid-responsive {
-        grid-template-columns: 1fr;
-    }
-    
-    table {
-        font-size: 0.875rem;
-    }
-    
-    .btn-group {
-        flex-direction: column;
-        gap: 0.5rem;
-    }
-    
-    .btn-group button {
-        width: 100%;
-    }
-}
-
-/* Utility classes */
-.text-center { text-align: center; }
-.text-right { text-align: right; }
-.mb-1 { margin-bottom: 1rem; }
-.mt-1 { margin-top: 1rem; }
-.p-1 { padding: 1rem; }
-
-/* Header styling */
-header {
-    background: linear-gradient(135deg, var(--primary-color) 0%, var(--secondary-color) 100%);
+.btn-primary {
+    background: var(--color-primary);
+    border-color: var(--color-primary);
     color: white;
-    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
 }
 
-header h1 {
-    color: white !important;
+.btn-primary:hover {
+    background: var(--color-primary-dark);
+}
+
+.btn-secondary {
+    background: var(--color-gray-100);
+}
+
+.btn-sm {
+    padding: 0.25rem 0.5rem;
+    font-size: 0.75rem;
+}
+
+.btn-lg {
+    padding: 0.75rem 1.5rem;
+    font-size: 1rem;
+}
+
+.btn-block {
+    display: block;
+    width: 100%;
+}
+
+.btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+/* Cards */
+.card {
+    background: white;
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    padding: 1.5rem;
+    margin-bottom: 1.5rem;
+}
+
+.card-title {
+    font-size: 1.125rem;
+    font-weight: 600;
+    margin-bottom: 1rem;
+}
+
+/* Forms */
+.form-group {
+    margin-bottom: 1rem;
+}
+
+.form-group label {
+    display: block;
+    font-size: 0.875rem;
+    font-weight: 500;
+    margin-bottom: 0.25rem;
+    color: var(--color-gray-700);
+}
+
+.form-group input,
+.form-group select {
+    width: 100%;
+    padding: 0.5rem 0.75rem;
+    font-size: 1rem;
+    border: 1px solid var(--color-gray-300);
+    border-radius: var(--radius);
+}
+
+.form-group input:focus,
+.form-group select:focus {
+    outline: none;
+    border-color: var(--color-primary);
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+}
+
+/* Alerts */
+.alert {
+    padding: 0.75rem 1rem;
+    border-radius: var(--radius);
+    margin-bottom: 1rem;
+    font-size: 0.875rem;
+}
+
+.alert-info {
+    background: #dbeafe;
+    color: #1e40af;
+}
+
+.alert-success {
+    background: #dcfce7;
+    color: #166534;
+}
+
+.alert-error {
+    background: #fee2e2;
+    color: #991b1b;
+}
+
+/* Hero (home page) */
+.hero {
+    text-align: center;
+    padding: 4rem 2rem;
+}
+
+.hero h1 {
+    font-size: 2.5rem;
+    margin-bottom: 1rem;
+}
+
+.hero p {
+    font-size: 1.25rem;
+    color: var(--color-gray-500);
+    margin-bottom: 2rem;
+}
+
+.cta-buttons {
+    display: flex;
+    gap: 1rem;
+    justify-content: center;
+}
+
+/* Auth Card */
+.auth-card {
+    max-width: 400px;
+    margin: 4rem auto;
+}
+
+/* Picks Page */
+.picks-page h1 {
+    margin-bottom: 0.5rem;
+}
+
+.picks-page > p {
+    color: var(--color-gray-500);
+    margin-bottom: 1rem;
+}
+
+.picks-summary {
+    margin-bottom: 2rem;
+    background: #f0fdf4;
+    border: 1px solid var(--color-success);
+}
+
+.picks-summary h3 {
+    color: var(--color-success);
+    margin-bottom: 1rem;
+}
+
+.picks-summary-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 0.75rem;
+    margin-bottom: 1rem;
+}
+
+.picks-summary-grid > div {
+    display: flex;
+    flex-direction: column;
+}
+
+.tier-label {
+    font-size: 0.75rem;
+    color: var(--color-gray-500);
+    text-transform: uppercase;
+}
+
+.golfer-pick {
+    font-weight: 600;
+    color: var(--color-gray-900);
+}
+
+.tier-section {
+    margin-bottom: 2rem;
+    background: white;
+    border-radius: var(--radius);
+    padding: 1.5rem;
+    box-shadow: var(--shadow);
+}
+
+.tier-section h3 {
+    font-size: 1rem;
+    font-weight: 600;
+    margin-bottom: 1rem;
+    color: var(--color-gray-700);
+}
+
+.tier-golfers {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 0.5rem;
+}
+
+.golfer-option {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 0.75rem;
+    border: 1px solid var(--color-gray-200);
+    border-radius: var(--radius);
+    cursor: pointer;
+    transition: all 0.15s;
+}
+
+.golfer-option:hover {
+    border-color: var(--color-primary);
+    background: var(--color-gray-50);
+}
+
+.golfer-option.selected {
+    border-color: var(--color-primary);
+    background: #eff6ff;
+}
+
+.golfer-option input[type="radio"] {
+    width: auto;
+}
+
+.golfer-name {
+    font-weight: 500;
+    flex: 1;
+}
+
+.golfer-country {
+    font-size: 0.75rem;
+    color: var(--color-gray-500);
+}
+
+.golfer-rank {
+    font-size: 0.75rem;
+    color: var(--color-gray-500);
+}
+
+/* Leaderboard */
+.leaderboard-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    flex-wrap: wrap;
+    gap: 1rem;
+    margin-bottom: 1rem;
+}
+
+.leaderboard-title {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.leaderboard-title h1 {
     margin: 0;
 }
 
-header button {
-    background: rgba(255,255,255,0.2);
-    border: 1px solid rgba(255,255,255,0.3);
-    color: white;
-    transition: all 0.2s ease;
+.leaderboard-page > p {
+    color: var(--color-gray-500);
+    margin-bottom: 2rem;
 }
 
-header button:hover {
-    background: rgba(255,255,255,0.3);
-    transform: translateY(-1px);
+/* Tournament Selector */
+.tournament-selector {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.tournament-selector label {
+    font-size: 0.875rem;
+    color: var(--color-gray-600);
+    white-space: nowrap;
+}
+
+.tournament-selector select {
+    padding: 0.5rem 0.75rem;
+    font-size: 0.875rem;
+    border: 1px solid var(--color-gray-300);
+    border-radius: var(--radius);
+    background: white;
+    cursor: pointer;
+    min-width: 200px;
+}
+
+.tournament-selector select:focus {
+    outline: none;
+    border-color: var(--color-primary);
+}
+
+/* Status Badges */
+.badge-live {
+    background: #dcfce7;
+    color: #166534;
+    animation: pulse 2s infinite;
+}
+
+.badge-final {
+    background: var(--color-gray-200);
+    color: var(--color-gray-700);
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.7; }
+}
+
+.leaderboard-table {
+    width: 100%;
+    background: white;
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    border-collapse: collapse;
+    overflow: hidden;
+}
+
+.leaderboard-table th,
+.leaderboard-table td {
+    padding: 0.75rem 1rem;
+    text-align: left;
+}
+
+.leaderboard-table th {
+    background: var(--color-gray-100);
+    font-weight: 600;
+    font-size: 0.875rem;
+    color: var(--color-gray-700);
+}
+
+.leaderboard-table tr:not(:last-child) td {
+    border-bottom: 1px solid var(--color-gray-200);
+}
+
+.leaderboard-table .rank {
+    font-weight: 600;
+    width: 50px;
+}
+
+.leaderboard-table .total {
+    font-weight: 700;
+    color: var(--color-primary);
+}
+
+.leaderboard-table .total-header {
+    color: var(--color-primary);
+}
+
+.leaderboard-table .missed-cut {
+    color: var(--color-error);
+    font-weight: 500;
+}
+
+.leaderboard-table .golfer-cell {
+    font-size: 0.875rem;
+}
+
+.leaderboard-table .current-user {
+    background: #fef3c7;
+}
+
+/* Admin */
+.admin-page h1 {
+    margin-bottom: 1.5rem;
+}
+
+.admin-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.admin-table th,
+.admin-table td {
+    padding: 0.5rem;
+    text-align: left;
+    border-bottom: 1px solid var(--color-gray-200);
+}
+
+.admin-table th {
+    font-weight: 600;
+    font-size: 0.875rem;
+    color: var(--color-gray-500);
+}
+
+.invite-code {
+    display: block;
+    padding: 0.75rem;
+    background: var(--color-gray-100);
+    border-radius: var(--radius);
+    font-family: monospace;
+    margin: 1rem 0;
+    word-break: break-all;
+}
+
+.badge {
+    display: inline-block;
+    padding: 0.25rem 0.5rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+    border-radius: 4px;
+}
+
+.badge-open {
+    background: #dcfce7;
+    color: #166534;
+}
+
+.badge-locked {
+    background: #fee2e2;
+    color: #991b1b;
+}
+
+/* Field Admin */
+.tiers-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 1.5rem;
+    margin-top: 1.5rem;
+}
+
+.field-admin-page .tier-section {
+    margin-bottom: 0;
+}
+
+.tier-table {
+    width: 100%;
+    font-size: 0.875rem;
+}
+
+.tier-table th,
+.tier-table td {
+    padding: 0.5rem;
+    border-bottom: 1px solid var(--color-gray-200);
+}
+
+.move-form {
+    display: flex;
+    gap: 0.25rem;
+}
+
+.move-form select {
+    width: 50px;
+    padding: 0.25rem;
+    font-size: 0.75rem;
+}
+
+/* Entries Section */
+.entries-section {
+    margin-bottom: 1.5rem;
+}
+
+/* Entries Table */
+.entries-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 1.5rem;
+}
+
+.entries-table th,
+.entries-table td {
+    padding: 0.75rem 1rem;
+    text-align: left;
+    border-bottom: 1px solid var(--color-gray-200);
+}
+
+.entries-table th {
+    font-weight: 600;
+    font-size: 0.875rem;
+    color: var(--color-gray-500);
+    background: var(--color-gray-50);
+}
+
+.entries-table td {
+    font-size: 0.875rem;
+}
+
+.entries-table .entry-num {
+    font-weight: 600;
+    color: var(--color-gray-900);
+}
+
+.entries-table .actions {
+    text-align: right;
+}
+
+.actions-cell {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.5rem;
+}
+
+/* Picks Actions */
+.picks-actions {
+    display: flex;
+    gap: 1rem;
+    margin-top: 1rem;
+}
+
+/* Edit Header */
+.edit-header {
+    margin-bottom: 1.5rem;
+}
+
+.edit-header h1 {
+    margin-bottom: 0.25rem;
+}
+
+.edit-header p {
+    color: var(--color-gray-500);
+    margin: 0;
+}
+
+.back-link {
+    display: inline-block;
+    margin-bottom: 1rem;
+    color: var(--color-primary);
+    text-decoration: none;
+    font-size: 0.875rem;
+}
+
+.back-link:hover {
+    text-decoration: underline;
+}
+
+/* Form Actions */
+.form-actions {
+    margin-top: 2rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid var(--color-gray-200);
+    text-align: center;
+}
+
+/* Danger Button */
+.btn-danger {
+    background: white;
+    border-color: var(--color-error);
+    color: var(--color-error);
+}
+
+.btn-danger:hover {
+    background: #fef2f2;
+}
+
+/* Leaderboard cell styles */
+.golfer-cell-content {
+    display: flex;
+    flex-direction: column;
+}
+
+.golfer-name-lb {
+    font-weight: 500;
+}
+
+.golfer-score {
+    font-size: 0.75rem;
+    color: var(--color-gray-500);
+}
+
+.golfer-cell.under-par .golfer-score {
+    color: var(--color-success);
+    font-weight: 600;
+}
+
+.golfer-cell.over-par .golfer-score {
+    color: var(--color-error);
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+    .header-content {
+        flex-wrap: wrap;
+        gap: 1rem;
+    }
+
+    .nav-links {
+        order: 3;
+        width: 100%;
+        justify-content: center;
+    }
+
+    .container {
+        padding: 1rem;
+    }
+
+    .hero h1 {
+        font-size: 1.75rem;
+    }
+
+    .tier-golfers {
+        grid-template-columns: 1fr;
+    }
+
+    .tiers-grid {
+        grid-template-columns: 1fr;
+    }
 }
