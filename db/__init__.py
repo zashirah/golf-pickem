@@ -1,9 +1,26 @@
 """Database initialization and connection."""
 from fasthtml.common import database
-from config import DATABASE_PATH
+from config import DATABASE_PATH, DATABASE_URL
+import logging
+import os
+
+logger = logging.getLogger(__name__)
 
 # Initialize database
-db = database(str(DATABASE_PATH))
+# For local development: use SQLite (ignore DATABASE_URL)
+# For production on Render: DATABASE_URL will be set, but FastHTML's database() won't handle PostgreSQL URLs
+# We'll stick with SQLite for FastHTML compatibility and migrate to PostgreSQL later if needed
+
+if DATABASE_URL and 'DATABASE_URL' in os.environ and os.environ.get('RENDER'):
+    # On Render production with explicit PostgreSQL setup needed
+    logger.warning("PostgreSQL not yet supported - using SQLite. Update planned.")
+    os.makedirs(DATABASE_PATH.parent, exist_ok=True)
+    db = database(str(DATABASE_PATH))
+else:
+    # Local development or initial setup - use SQLite
+    logger.info(f"Using SQLite database at {DATABASE_PATH}")
+    os.makedirs(DATABASE_PATH.parent, exist_ok=True)
+    db = database(str(DATABASE_PATH))
 
 # Table references (initialized in models.py)
 users = None
