@@ -2,6 +2,7 @@
 from fastsql import Database
 from config import DATA_DIR, DATABASE_URL
 import logging
+import socket
 
 logger = logging.getLogger(__name__)
 
@@ -15,10 +16,21 @@ DATA_DIR.mkdir(parents=True, exist_ok=True)
 # Log which database we're using
 if DATABASE_URL.startswith("postgresql"):
     logger.info("Using PostgreSQL database")
+
+    # Force IPv4 for PostgreSQL connections (Render only supports IPv4)
+    # This prevents "Network is unreachable" errors with IPv6 addresses from Supabase
+    original_getaddrinfo = socket.getaddrinfo
+
+    def getaddrinfo_ipv4_only(host, port, family=0, type=0, proto=0, flags=0):
+        """Force IPv4 resolution for database connections."""
+        return original_getaddrinfo(host, port, socket.AF_INET, type, proto, flags)
+
+    socket.getaddrinfo = getaddrinfo_ipv4_only
+    db = Database(DATABASE_URL)
+    socket.getaddrinfo = original_getaddrinfo  # Restore original
 else:
     logger.info(f"Using SQLite database: {DATABASE_URL}")
-
-db = Database(DATABASE_URL)
+    db = Database(DATABASE_URL)
 
 # Table references (initialized in models.py)
 users = None
