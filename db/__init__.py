@@ -3,6 +3,7 @@ from fastsql import Database
 from config import DATA_DIR, DATABASE_URL
 import logging
 import socket
+from urllib.parse import urlparse, urlunparse
 
 logger = logging.getLogger(__name__)
 
@@ -18,16 +19,36 @@ if DATABASE_URL.startswith("postgresql"):
     logger.info("Using PostgreSQL database")
 
     # Force IPv4 for PostgreSQL connections (Render only supports IPv4)
-    # This prevents "Network is unreachable" errors with IPv6 addresses from Supabase
-    original_getaddrinfo = socket.getaddrinfo
+    # Resolve hostname to IPv4 address and replace in connection string
+    parsed = urlparse(DATABASE_URL)
+    hostname = parsed.hostname
 
-    def getaddrinfo_ipv4_only(host, port, family=0, type=0, proto=0, flags=0):
-        """Force IPv4 resolution for database connections."""
-        return original_getaddrinfo(host, port, socket.AF_INET, type, proto, flags)
+    try:
+        # Get IPv4 address for the hostname
+        ipv4_addr = socket.getaddrinfo(hostname, None, socket.AF_INET)[0][4][0]
+        logger.info(f"Resolved {hostname} to IPv4: {ipv4_addr}")
 
-    socket.getaddrinfo = getaddrinfo_ipv4_only
-    db = Database(DATABASE_URL)
-    socket.getaddrinfo = original_getaddrinfo  # Restore original
+        # Replace hostname with IPv4 address in netloc
+        if parsed.port:
+            new_netloc = f"{parsed.username}:{parsed.password}@{ipv4_addr}:{parsed.port}" if parsed.password else f"{parsed.username}@{ipv4_addr}:{parsed.port}"
+        else:
+            new_netloc = f"{parsed.username}:{parsed.password}@{ipv4_addr}" if parsed.password else f"{parsed.username}@{ipv4_addr}"
+
+        # Reconstruct URL with IPv4 address
+        modified_url = urlunparse((
+            parsed.scheme,
+            new_netloc,
+            parsed.path,
+            parsed.params,
+            parsed.query,
+            parsed.fragment
+        ))
+
+        logger.info(f"Using IPv4 connection string")
+        db = Database(modified_url)
+    except Exception as e:
+        logger.error(f"Failed to resolve hostname to IPv4: {e}, trying original URL")
+        db = Database(DATABASE_URL)
 else:
     logger.info(f"Using SQLite database: {DATABASE_URL}")
     db = Database(DATABASE_URL)
