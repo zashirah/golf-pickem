@@ -2,8 +2,7 @@
 from fastsql import Database
 from config import DATA_DIR, DATABASE_URL
 import logging
-import socket
-from urllib.parse import urlparse, urlunparse
+import os
 
 logger = logging.getLogger(__name__)
 
@@ -18,37 +17,18 @@ DATA_DIR.mkdir(parents=True, exist_ok=True)
 if DATABASE_URL.startswith("postgresql"):
     logger.info("Using PostgreSQL database")
 
-    # Force IPv4 for PostgreSQL connections (Render only supports IPv4)
-    # Resolve hostname to IPv4 address and replace in connection string
-    parsed = urlparse(DATABASE_URL)
-    hostname = parsed.hostname
+    # Force IPv4-only for connections (Render doesn't support IPv6)
+    # Supabase connection pooler uses IPv4-only port 6543
+    modified_url = DATABASE_URL.replace(':5432', ':6543').replace('?', '?')
 
-    try:
-        # Get IPv4 address for the hostname
-        ipv4_addr = socket.getaddrinfo(hostname, None, socket.AF_INET)[0][4][0]
-        logger.info(f"Resolved {hostname} to IPv4: {ipv4_addr}")
+    # If no port specified in URL, use pooler port
+    if ':5432' not in DATABASE_URL and ':6543' not in DATABASE_URL:
+        # Add pooler mode if connecting via pooler
+        separator = '&' if '?' in modified_url else '?'
+        modified_url = f"{modified_url}{separator}pgbouncer=true"
 
-        # Replace hostname with IPv4 address in netloc
-        if parsed.port:
-            new_netloc = f"{parsed.username}:{parsed.password}@{ipv4_addr}:{parsed.port}" if parsed.password else f"{parsed.username}@{ipv4_addr}:{parsed.port}"
-        else:
-            new_netloc = f"{parsed.username}:{parsed.password}@{ipv4_addr}" if parsed.password else f"{parsed.username}@{ipv4_addr}"
-
-        # Reconstruct URL with IPv4 address
-        modified_url = urlunparse((
-            parsed.scheme,
-            new_netloc,
-            parsed.path,
-            parsed.params,
-            parsed.query,
-            parsed.fragment
-        ))
-
-        logger.info(f"Using IPv4 connection string")
-        db = Database(modified_url)
-    except Exception as e:
-        logger.error(f"Failed to resolve hostname to IPv4: {e}, trying original URL")
-        db = Database(DATABASE_URL)
+    logger.info("Using Supabase IPv4 connection pooler (port 6543)")
+    db = Database(modified_url)
 else:
     logger.info(f"Using SQLite database: {DATABASE_URL}")
     db = Database(DATABASE_URL)
