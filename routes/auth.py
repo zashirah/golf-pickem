@@ -80,6 +80,12 @@ def setup_auth_routes(app, auth_service):
                     cls="form-group"
                 ),
                 Div(
+                    Label("GroupMe Name", fr="groupme_name"),
+                    Input(type="text", name="groupme_name", id="groupme_name", required=True,
+                          placeholder="Your GroupMe display name for notifications"),
+                    cls="form-group"
+                ),
+                Div(
                     Label("Password", fr="password"),
                     Input(type="password", name="password", id="password", required=True, minlength="6"),
                     cls="form-group"
@@ -99,7 +105,7 @@ def setup_auth_routes(app, auth_service):
         return page_shell("Register", content)
 
     @app.post("/register")
-    def register_submit(request, invite: str, username: str, password: str, password2: str, display_name: str = None):
+    def register_submit(request, invite: str, username: str, password: str, password2: str, display_name: str = None, groupme_name: str = None):
         if not auth_service.validate_invite(invite):
             return RedirectResponse("/register", status_code=303)
 
@@ -109,7 +115,18 @@ def setup_auth_routes(app, auth_service):
         if len(password) < 6:
             return RedirectResponse(f"/register?invite={invite}&error=Password must be at least 6 characters", status_code=303)
 
-        user, error = auth_service.register_user(username, password, display_name)
+        # Verify GroupMe membership if configured
+        if groupme_name:
+            from services.groupme import GroupMeClient
+            from config import GROUPME_ACCESS_TOKEN, GROUPME_GROUP_ID
+
+            if GROUPME_ACCESS_TOKEN and GROUPME_GROUP_ID:
+                client = GroupMeClient()
+                is_member = client.verify_member(groupme_name, GROUPME_GROUP_ID, GROUPME_ACCESS_TOKEN)
+                if not is_member:
+                    return RedirectResponse(f"/register?invite={invite}&error=GroupMe name not found in group. Please check spelling.", status_code=303)
+
+        user, error = auth_service.register_user(username, password, display_name, groupme_name)
 
         if error:
             return RedirectResponse(f"/register?invite={invite}&error={error}", status_code=303)

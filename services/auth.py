@@ -83,7 +83,7 @@ class AuthService:
         """Check if provided invite secret is valid."""
         return provided_secret == self.get_invite_secret()
 
-    def register_user(self, username: str, password: str, display_name: str = None) -> tuple:
+    def register_user(self, username: str, password: str, display_name: str = None, groupme_name: str = None) -> tuple:
         """Register a new user. Returns (user, error_message)."""
         # Check if username exists
         existing = [u for u in self.db.users() if u.username == username]
@@ -99,6 +99,7 @@ class AuthService:
             username=username,
             password_hash=hash_password(password),
             display_name=display_name or username,
+            groupme_name=groupme_name,
             is_admin=is_admin,
             created_at=datetime.now().isoformat()
         )
