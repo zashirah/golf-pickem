@@ -3,6 +3,9 @@ __pycache__/
 *.py[cod]
 *$py.class
 
+# Sensitive configuration files
+.mcp.json
+
 # Development helper files
 *phase1*.py
 PHASE1_FINAL.py
