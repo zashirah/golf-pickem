@@ -60,6 +60,71 @@ def setup_home_routes(app):
     def static_file(fname: str):
         return FileResponse(f"static/{fname}")
 
+    @rt("/about")
+    def about_page(request):
+        """About page describing the app and features."""
+        user = get_current_user(request)
+        
+        return page_shell(
+            "About",
+            Div(
+                H1("About Golf Pick'em"),
+                
+                card(
+                    "What is Golf Pick'em?",
+                    P("Golf Pick'em is a fantasy golf game where you compete against your friends by picking golfers for each PGA Tour tournament. Your goal is to select golfers who will perform the best and climb to the top of the leaderboard."),
+                ),
+                
+                card(
+                    "How It Works",
+                    H4("1. Registration"),
+                    P("Get an invite link from the league administrator. Register with your GroupMe display name (must match exactly) to join the league and receive notifications."),
+                    
+                    H4("2. Making Picks"),
+                    P("For each tournament, the field is divided into 4 tiers based on player rankings:"),
+                    Ul(
+                        Li(Strong("Tier 1: "), "Top-ranked players"),
+                        Li(Strong("Tier 2: "), "Mid-tier players"),
+                        Li(Strong("Tier 3: "), "Lower-ranked players"),
+                        Li(Strong("Tier 4: "), "Underdogs and long shots"),
+                    ),
+                    P("You must pick one golfer from each tier before the tournament starts. You can create multiple entries per tournament if you want to try different strategies."),
+                    
+                    H4("3. Scoring"),
+                    P(Strong("Best 2 of 4 system: "), "Only your best 2 golfers (lowest scores against par) count toward your total."),
+                    Ul(
+                        Li("Lower scores are better (just like golf!)"),
+                        Li("If a golfer misses the cut, withdraws, or is disqualified, they don't count"),
+                        Li("If fewer than 2 of your golfers complete the tournament, your entry is disqualified (DQ)"),
+                    ),
+                    P(Strong("Example: "), "If your picks finish at -8, -5, +2, and MC (missed cut), your total is -13 (the sum of -8 and -5)."),
+                    
+                    H4("4. Leaderboard"),
+                    P("Track your standing throughout the tournament. Scores update automatically as the tournament progresses. The entry with the lowest total wins!"),
+                ),
+                
+                card(
+                    "Features",
+                    Ul(
+                        Li(Strong("Multiple Entries: "), "Create multiple entries per tournament to diversify your picks"),
+                        Li(Strong("Live Updates: "), "Scores sync automatically during tournaments"),
+                        Li(Strong("GroupMe Integration: "), "Get notifications when picks are submitted and when tournaments end"),
+                        Li(Strong("Tournament History: "), "View results from past tournaments"),
+                        Li(Strong("Profile Management: "), "Update your GroupMe name anytime"),
+                    )
+                ),
+                
+                Div(
+                    A("← Back to Home", href="/", cls="btn btn-secondary"),
+                    A("View Leaderboard", href="/leaderboard", cls="btn btn-primary") if user else None,
+                    style="margin-top: 2rem; display: flex; gap: 1rem;"
+                ),
+                
+                cls="about-page"
+            ),
+            user=user
+        )
+
     @rt("/profile")
     def profile_page(request, error: str = None, success: str = None):
         """Profile page for editing user's GroupMe name."""

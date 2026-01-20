@@ -566,11 +566,36 @@ def setup_leaderboard_routes(app):
         # Calculate purse for header display
         from routes.utils import calculate_tournament_purse
         purse = calculate_tournament_purse(tournament, all_picks)
+        
+        # Build pricing info
+        pricing_info = []
+        if purse:
+            pricing_info.append(Div(
+                Strong("💰 Total Purse: "),
+                Span(f"${purse}", style="font-size: 1.2em; color: #2e7d32;"),
+                style="margin-right: 1.5rem;"
+            ))
+        if tournament.entry_price:
+            price_cents = tournament.entry_price
+            price_dollars = price_cents / 100
+            pricing_info.append(Div(
+                Strong("Entry: "),
+                Span(f"${price_dollars:.0f}", style="color: #666;"),
+                style="margin-right: 1rem;"
+            ))
+        if tournament.three_entry_price:
+            three_price_cents = tournament.three_entry_price
+            three_price_dollars = three_price_cents / 100
+            pricing_info.append(Div(
+                Strong("3-Pack: "),
+                Span(f"${three_price_dollars:.0f}", style="color: #666;")
+            ))
+        
         purse_display = Div(
-            Strong("💰 Total Purse: "),
-            Span(f"${purse}" if purse else "Not set", style="font-size: 1.2em; color: #2e7d32;"),
-            cls="tournament-purse"
-        ) if purse or tournament.entry_price else None
+            *pricing_info,
+            cls="tournament-purse",
+            style="display: flex; align-items: center; flex-wrap: wrap; gap: 0.5rem;"
+        ) if pricing_info else None
 
         return page_shell(
             "Leaderboard",

@@ -17,6 +17,7 @@ def nav_header(user=None):
         nav_items = [
             A("Picks", href="/picks", cls="nav-link"),
             A("Leaderboard", href="/leaderboard", cls="nav-link"),
+            A("About", href="/about", cls="nav-link"),
         ]
         if user.is_admin:
             nav_items.append(A("Admin", href="/admin", cls="nav-link"))
@@ -38,6 +39,10 @@ def nav_header(user=None):
     return Header(
         Div(
             A("Golf Pick'em", href="/", cls="logo"),
+            Nav(
+                A("About", href="/about", cls="nav-link"),
+                cls="nav-links"
+            ),
             A("Login", href="/login", cls="btn btn-primary"),
             cls="header-content"
         ),

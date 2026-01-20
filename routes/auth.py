@@ -65,14 +65,18 @@ def setup_auth_routes(app, auth_service):
 
         content = card(
             "Create Account",
+            Div(
+                P(Strong("Important: "), "Your GroupMe name must match your display name in the GroupMe group exactly (including capitalization and spacing). This is required for registration verification.", style="color: #d32f2f; margin-bottom: 1rem;"),
+                cls="registration-notice"
+            ),
             Form(
                 alert(error, "error") if error else None,
                 Input(type="hidden", name="invite", value=invite),
                 Div(
                     Label("GroupMe Name", fr="groupme_name"),
                     Input(type="text", name="groupme_name", id="groupme_name", required=True,
-                          placeholder="Your GroupMe display name"),
-                    Small("This is how your name will appear and how you'll log in", style="color: #666;"),
+                          placeholder="Exactly as shown in GroupMe"),
+                    Small("This is how your name will appear and how you'll log in. Must match your GroupMe display name exactly.", style="color: #666;"),
                     cls="form-group"
                 ),
                 Div(
