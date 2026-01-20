@@ -2,8 +2,33 @@
 from fastsql import Database
 from config import DATA_DIR, DATABASE_URL
 import logging
+import sqlalchemy as sa
 
 logger = logging.getLogger(__name__)
+
+
+class PostgresDatabase(Database):
+    """Custom Database subclass with connection pooling options for PostgreSQL.
+
+    Handles Supabase free tier idle connection timeouts by:
+    - pool_pre_ping: Testing connections before use (detects stale connections)
+    - pool_recycle: Recycling connections every 5 minutes to prevent idle timeout
+    """
+
+    def __init__(self, conn_str, pool_pre_ping=True, pool_recycle=300):
+        self.conn_str = conn_str
+        self.engine = sa.create_engine(
+            conn_str,
+            pool_pre_ping=pool_pre_ping,
+            pool_recycle=pool_recycle,
+        )
+        self.meta = sa.MetaData()
+        self.meta.reflect(bind=self.engine)
+        self.meta.bind = self.engine
+        self.conn = self.engine.connect()
+        self.meta.conn = self.conn
+        self._tables = {}
+
 
 # Initialize database using fastsql (MiniDataAPI spec)
 # Local development: SQLite (default when DATABASE_URL not set)
@@ -18,8 +43,8 @@ DATA_DIR.mkdir(parents=True, exist_ok=True)
 
 # Log which database we're using
 if DATABASE_URL.startswith("postgresql"):
-    logger.info("Using PostgreSQL database")
-    db = Database(DATABASE_URL)
+    logger.info("Using PostgreSQL database with connection pooling (pool_pre_ping=True, pool_recycle=300)")
+    db = PostgresDatabase(DATABASE_URL)
 else:
     logger.info(f"Using SQLite database: {DATABASE_URL}")
     db = Database(DATABASE_URL)
