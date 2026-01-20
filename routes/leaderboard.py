@@ -39,11 +39,145 @@ def _tournament_names_match(db_name: str, api_name: str) -> bool:
     return False
 
 
+def _build_tournament_leaderboard(db, tournament, results, golfers_by_id):
+    """Build the tournament leaderboard showing actual golfer results."""
+    
+    # Sort results by position (None positions go to bottom)
+    sorted_results = sorted(
+        results.values(),
+        key=lambda r: (
+            r.position is None,  # None positions at bottom
+            r.position or 999,   # Sort by position
+            r.score_to_par or 999  # Then by score
+        )
+    )
+    
+    logger.info(f"Building tournament leaderboard with {len(sorted_results)} results")
+    
+    if not sorted_results:
+        return P("No tournament results yet. Results will appear once the tournament starts.")
+    
+    def golfer_row(result):
+        golfer = golfers_by_id.get(result.golfer_id)
+        name = golfer.name if golfer else "Unknown"
+        
+        # Position display
+        if result.position:
+            pos_display = f"T{result.position}" if result.position else str(result.position)
+        elif result.status == 'cut':
+            pos_display = "MC"
+        elif result.status == 'wd':
+            pos_display = "WD"
+        elif result.status == 'dq':
+            pos_display = "DQ"
+        else:
+            pos_display = "-"
+        
+        # Score display
+        if result.score_to_par is not None:
+            if result.score_to_par == 0:
+                score_display = "E"
+            elif result.score_to_par > 0:
+                score_display = f"+{result.score_to_par}"
+            else:
+                score_display = str(result.score_to_par)
+        else:
+            score_display = "-"
+        
+        # Thru display
+        if result.thru is not None:
+            if result.thru == 18:
+                thru_display = "F"
+            else:
+                thru_display = str(result.thru)
+        else:
+            thru_display = "-"
+        
+        # Score class for coloring
+        score_cls = ""
+        if result.score_to_par is not None:
+            if result.score_to_par < 0:
+                score_cls = "under-par"
+            elif result.score_to_par > 0:
+                score_cls = "over-par"
+        if result.status in ('cut', 'wd', 'dq'):
+            score_cls = "missed-cut"
+        
+        return Tr(
+            Td(pos_display, cls="rank"),
+            Td(name, cls="player-name"),
+            Td(score_display, cls=f"score {score_cls}"),
+            Td(thru_display),
+        )
+    
+    # Build mobile cards too
+    def golfer_card(result):
+        golfer = golfers_by_id.get(result.golfer_id)
+        name = golfer.name if golfer else "Unknown"
+        
+        if result.position:
+            pos_display = f"T{result.position}" if result.position else str(result.position)
+        elif result.status == 'cut':
+            pos_display = "MC"
+        elif result.status == 'wd':
+            pos_display = "WD"
+        elif result.status == 'dq':
+            pos_display = "DQ"
+        else:
+            pos_display = "-"
+        
+        if result.score_to_par is not None:
+            if result.score_to_par == 0:
+                score_display = "E"
+            elif result.score_to_par > 0:
+                score_display = f"+{result.score_to_par}"
+            else:
+                score_display = str(result.score_to_par)
+        else:
+            score_display = "-"
+        
+        thru_display = "F" if result.thru == 18 else (str(result.thru) if result.thru else "-")
+        
+        score_cls = ""
+        if result.score_to_par is not None:
+            if result.score_to_par < 0:
+                score_cls = "under-par"
+            elif result.score_to_par > 0:
+                score_cls = "over-par"
+        if result.status in ('cut', 'wd', 'dq'):
+            score_cls = "missed-cut"
+        
+        return Div(
+            Span(pos_display, cls="card-rank"),
+            Span(name, cls="card-player"),
+            Span(score_display, cls=f"card-score {score_cls}"),
+            Span(thru_display, cls="card-thru"),
+            cls="tournament-card"
+        )
+    
+    desktop_rows = [golfer_row(r) for r in sorted_results[:50]]  # Top 50
+    mobile_cards = [golfer_card(r) for r in sorted_results[:50]]
+    
+    return Div(
+        P(f"Showing top {min(50, len(sorted_results))} of {len(sorted_results)} golfers", cls="tournament-count"),
+        # Desktop table - use same class as pick'em leaderboard
+        Table(
+            Thead(
+                Tr(
+                    Th("Pos"), Th("Player"), Th("Score"), Th("Thru")
+                )
+            ),
+            Tbody(*desktop_rows),
+            cls="leaderboard-table"
+        ),
+    )
+
+
 def setup_leaderboard_routes(app):
     """Register leaderboard routes."""
 
     @app.get("/leaderboard")
-    def leaderboard_page(request, tournament_id: int = None, message: str = None):
+    def leaderboard_page(request, tournament_id: int = None, message: str = None, view: str = "pickem"):
         db = get_db()
         user = get_current_user(request)
         if not user:
@@ -51,6 +185,10 @@ def setup_leaderboard_routes(app):
 
         # Import alert for message display (will be set after auto-sync)
         from components.layout import alert
+        
+        # Validate view parameter
+        if view not in ("pickem", "tournament"):
+            view = "pickem"
 
         # Get tournaments that can be viewed (active or completed)
         all_tournaments = list(db.tournaments())
@@ -447,6 +585,45 @@ def setup_leaderboard_routes(app):
             desktop_rows = []
             mobile_cards = []
 
+        # Build tabs for switching views
+        base_url = f"/leaderboard?tournament_id={tournament.id}"
+        tabs = Div(
+            A("Pick'em Standings", href=f"{base_url}&view=pickem", 
+              cls=f"tab {'tab-active' if view == 'pickem' else ''}"),
+            A("Tournament Leaderboard", href=f"{base_url}&view=tournament",
+              cls=f"tab {'tab-active' if view == 'tournament' else ''}"),
+            cls="tabs"
+        )
+
+        # Build content based on view
+        if view == "tournament":
+            # Tournament leaderboard - show actual golfer results
+            tournament_content = _build_tournament_leaderboard(db, tournament, results, golfers_by_id)
+        else:
+            # Pick'em standings (default)
+            tournament_content = Div(
+                P("Best 2 of 4 scores against par. Lowest total wins."),
+                # Desktop table (hidden on mobile)
+                Table(
+                    Thead(
+                        Tr(
+                            Th("Rank"), Th("Player"),
+                            Th("Tier 1"), Th("Tier 2"), Th("Tier 3"), Th("Tier 4"),
+                            Th("Best 2", cls="total-header")
+                        )
+                    ),
+                    Tbody(*desktop_rows),
+                    cls="leaderboard-table desktop-only"
+                ) if all_picks else None,
+                # Mobile cards (hidden on desktop)
+                Div(
+                    *mobile_cards,
+                    cls="leaderboard-cards mobile-only"
+                ) if all_picks else None,
+                P("No picks yet for this tournament.") if not all_picks else None,
+                A("Make Picks", href="/picks", cls="btn btn-primary") if tournament.status == 'active' else None,
+            )
+
         return page_shell(
             "Leaderboard",
             Div(
@@ -468,26 +645,8 @@ def setup_leaderboard_routes(app):
                     ),
                     cls="leaderboard-header"
                 ),
-                P("Best 2 of 4 scores against par. Lowest total wins."),
-                # Desktop table (hidden on mobile)
-                Table(
-                    Thead(
-                        Tr(
-                            Th("Rank"), Th("Player"),
-                            Th("Tier 1"), Th("Tier 2"), Th("Tier 3"), Th("Tier 4"),
-                            Th("Best 2", cls="total-header")
-                        )
-                    ),
-                    Tbody(*desktop_rows),
-                    cls="leaderboard-table desktop-only"
-                ) if all_picks else None,
-                # Mobile cards (hidden on desktop)
-                Div(
-                    *mobile_cards,
-                    cls="leaderboard-cards mobile-only"
-                ) if all_picks else None,
-                P("No picks yet for this tournament.") if not all_picks else None,
-                A("Make Picks", href="/picks", cls="btn btn-primary") if tournament.status == 'active' else None,
+                tabs,
+                tournament_content,
                 cls="leaderboard-page"
             ),
             user=user

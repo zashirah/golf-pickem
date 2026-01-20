@@ -96,7 +96,10 @@ def setup_admin_routes(app):
                         Thead(Tr(Th("Name"), Th("Status"), Th("Picks"), Th("Actions"))),
                         Tbody(*[Tr(
                             Td(t.name),
-                            Td(t.status),
+                            Td(
+                                Span(t.status.title(), cls=f"badge badge-{t.status}"),
+                                " ⭐" if t.status == 'active' else ""
+                            ),
                             Td(
                                 Span("Locked", cls="badge badge-locked") if t.picks_locked else Span("Open", cls="badge badge-open")
                             ),
@@ -109,6 +112,13 @@ def setup_admin_routes(app):
                                     method="post",
                                     style="display:inline"
                                 ),
+                                Form(
+                                    Button("Set Active", type="submit", cls="btn btn-sm btn-success"),
+                                    Input(type="hidden", name="tournament_id", value=str(t.id)),
+                                    action="/admin/set-active",
+                                    method="post",
+                                    style="display:inline"
+                                ) if t.status != 'active' else None,
                                 Form(
                                     Button("Sync Results", type="submit", cls="btn btn-sm btn-primary"),
                                     Input(type="hidden", name="tournament_id", value=str(t.id)),
@@ -239,6 +249,28 @@ def setup_admin_routes(app):
             if t.id == tournament_id:
                 db.tournaments.update(id=t.id, picks_locked=not t.picks_locked)
                 break
+
+        return RedirectResponse("/admin", status_code=303)
+
+    @app.post("/admin/set-active")
+    def set_active_tournament(request, tournament_id: int):
+        """Manually set a tournament as the active tournament."""
+        db = get_db()
+        user = get_current_user(request)
+        if not user or not user.is_admin:
+            return RedirectResponse("/", status_code=303)
+
+        # Set the selected tournament as active, revert others to upcoming
+        for t in db.tournaments():
+            if t.id == tournament_id:
+                # Set this one as active
+                db.tournaments.update(id=t.id, status='active')
+                logger.info(f"Set {t.name} as active tournament")
+            elif t.status == 'active':
+                # Revert other active tournaments back to upcoming (not completed)
+                # Tournaments should only be marked completed when they actually finish
+                db.tournaments.update(id=t.id, status='upcoming')
+                logger.info(f"Set {t.name} back to upcoming (no longer active)")
 
         return RedirectResponse("/admin", status_code=303)
 
