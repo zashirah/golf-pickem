@@ -80,9 +80,10 @@ def setup_auth_routes(app, auth_service):
                     cls="form-group"
                 ),
                 Div(
-                    Label("GroupMe Name", fr="groupme_name"),
-                    Input(type="text", name="groupme_name", id="groupme_name", required=True,
+                    Label("GroupMe Name (optional)", fr="groupme_name"),
+                    Input(type="text", name="groupme_name", id="groupme_name",
                           placeholder="Your GroupMe display name for notifications"),
+                    Small("Leave blank if you're not in the GroupMe group", style="color: #666;"),
                     cls="form-group"
                 ),
                 Div(

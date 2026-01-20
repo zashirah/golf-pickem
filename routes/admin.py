@@ -19,6 +19,15 @@ def _get_groupme_bot_id(db_module) -> str:
     return None
 
 
+def _mask_bot_id(bot_id: str) -> str:
+    """Mask bot ID for display, showing only first and last 4 chars."""
+    if not bot_id:
+        return ""
+    if len(bot_id) <= 8:
+        return "****"
+    return f"{bot_id[:4]}...{bot_id[-4:]}"
+
+
 def _normalize_tournament_name(name: str) -> str:
     """Normalize tournament name for comparison."""
     if not name:
@@ -54,7 +63,7 @@ def setup_admin_routes(app):
     """Register admin routes."""
 
     @app.get("/admin")
-    def admin_page(request, error: str = None):
+    def admin_page(request, error: str = None, success: str = None):
         db = get_db()
         auth_service = get_auth_service()
         user = get_current_user(request)
@@ -72,15 +81,17 @@ def setup_admin_routes(app):
         tournaments = list(db.tournaments())
         users = list(db.users())
 
-        # Import alert for error display
+        # Import alert for message display
         from components.layout import alert
         error_msg = alert(error, "error") if error else None
+        success_msg = alert(success, "success") if success else None
 
         return page_shell(
             "Admin",
             Div(
                 H1("Admin Dashboard"),
                 error_msg,
+                success_msg,
 
                 card(
                     "Invite Link",
@@ -177,15 +188,18 @@ def setup_admin_routes(app):
                     "GroupMe Settings",
                     Div(
                         P("Configure GroupMe bot for notifications."),
+                        P(
+                            Strong("Current Bot ID: "),
+                            Code(_mask_bot_id(_get_groupme_bot_id(db))) if _get_groupme_bot_id(db) else "Not configured"
+                        ),
                         Form(
                             Div(
-                                Label("Bot ID", For="bot_id"),
+                                Label("New Bot ID", For="bot_id"),
                                 Input(
                                     type="text",
                                     id="bot_id",
                                     name="bot_id",
-                                    placeholder="Your GroupMe bot ID",
-                                    value=_get_groupme_bot_id(db) or "",
+                                    placeholder="Enter new bot ID to update",
                                 ),
                                 cls="form-group"
                             ),
@@ -199,7 +213,7 @@ def setup_admin_routes(app):
                             action="/admin/groupme/test",
                             method="post",
                             style="display:inline;"
-                        ),
+                        ) if _get_groupme_bot_id(db) else None,
                         cls="groupme-settings"
                     )
                 ),
@@ -914,7 +928,7 @@ def setup_admin_routes(app):
         return RedirectResponse(f"/admin/tournament/{tid}/field", status_code=303)
 
     @app.get("/admin/tournament/{tid}/pricing")
-    def tournament_pricing_page(request, tid: int):
+    def tournament_pricing_page(request, tid: int, error: str = None, success: str = None):
         """Edit tournament entry pricing."""
         db = get_db()
         user = get_current_user(request)
@@ -939,10 +953,17 @@ def setup_admin_routes(app):
         three_entry_price = tournament.three_entry_price or 0
         total_purse = entry_count * entry_price if entry_price > 0 else 0
 
+        # Import alert for messages
+        from components.layout import alert
+        error_msg = alert(error, "error") if error else None
+        success_msg = alert(success, "success") if success else None
+
         return page_shell(
             "Tournament Pricing",
             Div(
                 H1(f"Pricing: {tournament.name}"),
+                error_msg,
+                success_msg,
                 card(
                     "Entry Pricing",
                     Form(
@@ -1010,16 +1031,23 @@ def setup_admin_routes(app):
         if not tournament:
             return RedirectResponse("/admin", status_code=303)
 
-        # Update pricing fields
+        # Validate pricing (must be positive or empty/zero to clear)
+        if entry_price is not None and entry_price < 0:
+            return RedirectResponse(f"/admin/tournament/{tid}/pricing?error=Entry price must be positive", status_code=303)
+        if three_entry_price is not None and three_entry_price < 0:
+            return RedirectResponse(f"/admin/tournament/{tid}/pricing?error=3-entry price must be positive", status_code=303)
+
+        # Update pricing fields (0 or empty clears the price)
         update_data = {}
         if entry_price is not None:
-            update_data['entry_price'] = int(entry_price) if entry_price else None
+            update_data['entry_price'] = int(entry_price) if entry_price > 0 else None
         if three_entry_price is not None:
-            update_data['three_entry_price'] = int(three_entry_price) if three_entry_price else None
+            update_data['three_entry_price'] = int(three_entry_price) if three_entry_price > 0 else None
 
         if update_data:
             db.tournaments.update(id=tid, **update_data)
             logger.info(f"Updated pricing for tournament {tid}: {update_data}")
+            return RedirectResponse(f"/admin/tournament/{tid}/pricing?success=Pricing updated", status_code=303)
 
         return RedirectResponse(f"/admin/tournament/{tid}/pricing", status_code=303)
 
@@ -1031,7 +1059,8 @@ def setup_admin_routes(app):
         if not user or not user.is_admin:
             return RedirectResponse("/admin", status_code=303)
 
-        if bot_id:
+        if bot_id and bot_id.strip():
+            bot_id = bot_id.strip()
             # Find existing setting or create new one
             settings = list(db.app_settings())
             existing = [s for s in settings if s.key == 'groupme_bot_id']
@@ -1042,8 +1071,9 @@ def setup_admin_routes(app):
                 db.app_settings.insert(key='groupme_bot_id', value=bot_id)
 
             logger.info(f"Updated GroupMe bot_id (length: {len(bot_id)})")
+            return RedirectResponse("/admin?success=GroupMe bot ID saved", status_code=303)
 
-        return RedirectResponse("/admin", status_code=303)
+        return RedirectResponse("/admin?error=Bot ID cannot be empty", status_code=303)
 
     @app.post("/admin/groupme/test")
     def test_groupme_message(request):
@@ -1065,13 +1095,14 @@ def setup_admin_routes(app):
 
             if success:
                 logger.info("Test GroupMe message sent successfully")
+                return RedirectResponse("/admin?success=Test message sent to GroupMe", status_code=303)
             else:
                 logger.warning("Test GroupMe message failed to send")
+                return RedirectResponse("/admin?error=Failed to send test message", status_code=303)
 
         except Exception as e:
             logger.error(f"Failed to send test GroupMe message: {e}", exc_info=True)
-
-        return RedirectResponse("/admin", status_code=303)
+            return RedirectResponse("/admin?error=Error sending test message", status_code=303)
 
 
 def _send_final_leaderboard_groupme(db_module, tournament_id):

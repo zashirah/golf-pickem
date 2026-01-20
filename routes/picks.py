@@ -1,4 +1,5 @@
 """Picks routes - user pick management."""
+import logging
 from datetime import datetime
 
 from fasthtml.common import *
@@ -6,6 +7,8 @@ from starlette.responses import RedirectResponse
 
 from components.layout import page_shell, card, alert
 from routes.utils import get_current_user, get_db, get_active_tournament
+
+logger = logging.getLogger(__name__)
 
 
 def setup_picks_routes(app):
@@ -344,7 +347,7 @@ def _send_pick_notification(db, user, tournament, entry, tier1, tier2, tier3, ti
 
         # Build message
         display_name = user.display_name or user.username
-        message = f"""🏌️ {display_name} {action.title()} Entry {entry} for {tournament.name}
+        message = f"""🏌️ {display_name} {action} Entry {entry} for {tournament.name}
 Tier 1: {tier1_name}
 Tier 2: {tier2_name}
 Tier 3: {tier3_name}
@@ -355,6 +358,4 @@ Tier 4: {tier4_name}
         client = GroupMeClient(db_module=db)
         client.send_message(message)
     except Exception as e:
-        import logging
-        logger = logging.getLogger(__name__)
         logger.error(f"Failed to send pick notification: {e}", exc_info=True)

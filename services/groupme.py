@@ -10,8 +10,9 @@ class GroupMeClient:
     """Client for GroupMe API."""
 
     BASE_URL = "https://api.groupme.com/v3"
+    TIMEOUT = 10.0
 
-    def __init__(self, bot_id: str = None, db_module = None):
+    def __init__(self, bot_id: str = None, db_module=None):
         """Initialize GroupMe client.
 
         Args:
@@ -34,7 +35,6 @@ class GroupMeClient:
             bot_id = GROUPME_BOT_ID
 
         self.bot_id = bot_id
-        self._client = httpx.Client(timeout=10.0)
 
     def send_message(self, text: str) -> bool:
         """Send message via GroupMe bot.
@@ -52,8 +52,9 @@ class GroupMeClient:
         try:
             url = f"{self.BASE_URL}/bots/post"
             payload = {"text": text, "bot_id": self.bot_id}
-            response = self._client.post(url, json=payload)
-            response.raise_for_status()
+            with httpx.Client(timeout=self.TIMEOUT) as client:
+                response = client.post(url, json=payload)
+                response.raise_for_status()
             logger.info(f"GroupMe message sent: {text[:50]}...")
             return True
         except Exception as e:
@@ -78,10 +79,11 @@ class GroupMeClient:
         try:
             url = f"{self.BASE_URL}/groups/{group_id}"
             headers = {"X-Access-Token": access_token}
-            response = self._client.get(url, headers=headers)
-            response.raise_for_status()
+            with httpx.Client(timeout=self.TIMEOUT) as client:
+                response = client.get(url, headers=headers)
+                response.raise_for_status()
+                data = response.json()
 
-            data = response.json()
             members = data.get("response", {}).get("members", [])
 
             # Check if groupme_name matches any member's nickname
