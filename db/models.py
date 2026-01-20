@@ -9,6 +9,7 @@ class User:
     username: str
     password_hash: str
     display_name: Optional[str] = None
+    groupme_name: Optional[str] = None
     is_admin: bool = False
     created_at: Optional[str] = None
 
@@ -40,6 +41,8 @@ class Tournament:
     status: str = "upcoming"  # upcoming, active, completed
     picks_locked: bool = False
     last_synced_at: Optional[str] = None  # When results were last synced from DataGolf
+    entry_price: Optional[int] = None  # Price for 1 entry
+    three_entry_price: Optional[int] = None  # Discounted price for 3 entries
     created_at: Optional[str] = None
     updated_at: Optional[str] = None
 
