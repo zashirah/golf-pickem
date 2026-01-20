@@ -228,6 +228,8 @@ def setup_admin_routes(app):
                         if tournament.status != 'completed':
                             logger.info(f"Setting {tournament.name} to completed (round {current_round})")
                             db_module.tournaments.update(id=tournament.id, status='completed')
+                            # Auto-send final leaderboard to GroupMe
+                            _send_final_leaderboard_groupme(db_module, tournament.id)
                     
                     # Lock picks at first tee time (when tournament becomes active and it's tournament day)
                     if tournament.status == 'active' and not tournament.picks_locked:
@@ -981,3 +983,73 @@ def setup_admin_routes(app):
             logger.info(f"Updated pricing for tournament {tid}: {update_data}")
 
         return RedirectResponse(f"/admin/tournament/{tid}/pricing", status_code=303)
+
+
+def _send_final_leaderboard_groupme(db_module, tournament_id):
+    """Send final leaderboard to GroupMe when tournament completes."""
+    try:
+        from services.groupme import GroupMeClient
+        from routes.utils import calculate_tournament_purse, format_score
+
+        # Get tournament
+        tournament = None
+        for t in db_module.tournaments():
+            if t.id == tournament_id:
+                tournament = t
+                break
+
+        if not tournament:
+            return
+
+        # Get bot_id from app_settings first, then fall back to config
+        bot_id = None
+        for setting in db_module.app_settings():
+            if setting.key == 'groupme_bot_id':
+                bot_id = setting.value
+                break
+
+        if not bot_id:
+            from config import GROUPME_BOT_ID
+            bot_id = GROUPME_BOT_ID
+
+        if not bot_id:
+            return
+
+        # Get standings
+        all_picks = [p for p in db_module.picks() if p.tournament_id == tournament_id]
+        standings = [s for s in db_module.pickem_standings() if s.tournament_id == tournament_id]
+        standings.sort(key=lambda s: s.rank if s.rank else 999)
+
+        users_by_id = {u.id: u for u in db_module.users()}
+
+        # Build message
+        purse = calculate_tournament_purse(tournament, all_picks)
+
+        message_lines = [f"🏁 FINAL LEADERBOARD: {tournament.name}"]
+        if purse:
+            message_lines.append(f"💰 Purse: ${purse}")
+        message_lines.append("")
+
+        # Add top 10 standings
+        for i, standing in enumerate(standings[:10]):
+            if i >= 10:
+                break
+            user = users_by_id.get(standing.user_id)
+            player_name = user.display_name if user else f"User {standing.user_id}"
+            rank = standing.rank if standing.rank else (i + 1)
+            score = standing.best_two_total if standing.best_two_total is not None else "DQ"
+
+            # Format score
+            score_str = format_score(score) if isinstance(score, int) else str(score)
+
+            message_lines.append(f"{rank}. {player_name} - {score_str}")
+
+        message = "\n".join(message_lines)
+
+        # Send message
+        client = GroupMeClient(bot_id)
+        client.send_message(message)
+        logger.info(f"Sent final leaderboard for {tournament.name} to GroupMe")
+
+    except Exception as e:
+        logger.error(f"Failed to send final leaderboard to GroupMe: {e}", exc_info=True)
