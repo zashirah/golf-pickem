@@ -11,12 +11,28 @@ class GroupMeClient:
 
     BASE_URL = "https://api.groupme.com/v3"
 
-    def __init__(self, bot_id: str = None):
+    def __init__(self, bot_id: str = None, db_module = None):
         """Initialize GroupMe client.
 
         Args:
-            bot_id: GroupMe bot ID for sending messages
+            bot_id: GroupMe bot ID for sending messages (direct)
+            db_module: Database module to check app_settings for bot_id (optional, takes priority)
         """
+        # Check app_settings first if db_module provided
+        if db_module:
+            try:
+                for setting in db_module.app_settings():
+                    if setting.key == 'groupme_bot_id':
+                        bot_id = setting.value
+                        break
+            except Exception as e:
+                logger.warning(f"Failed to fetch bot_id from app_settings: {e}")
+
+        # Fall back to provided bot_id or env var
+        if not bot_id:
+            from config import GROUPME_BOT_ID
+            bot_id = GROUPME_BOT_ID
+
         self.bot_id = bot_id
         self._client = httpx.Client(timeout=10.0)
 
