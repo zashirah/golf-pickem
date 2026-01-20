@@ -1335,6 +1335,18 @@ table.desktop-only {
     background: #15803d;
 }
 
+/* Table wrapper for horizontal scrolling on mobile */
+.table-wrapper {
+    width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    margin-bottom: 1rem;
+}
+
+.table-wrapper table {
+    min-width: 600px; /* Ensures table doesn't collapse on mobile */
+}
+
 /* Mobile tab adjustments */
 @media (max-width: 600px) {
     .tabs {
@@ -1347,5 +1359,27 @@ table.desktop-only {
         text-align: center;
         padding: 0.5rem 0.25rem;
         font-size: 0.8rem;
+    }
+    
+    /* Make tables scrollable on mobile */
+    .leaderboard-table,
+    .admin-table,
+    .tier-table,
+    .entries-table {
+        display: block;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        white-space: nowrap;
+    }
+    
+    .leaderboard-table th,
+    .leaderboard-table td,
+    .admin-table th,
+    .admin-table td,
+    .tier-table th,
+    .tier-table td,
+    .entries-table th,
+    .entries-table td {
+        min-width: 80px;
     }
 }
