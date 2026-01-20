@@ -211,21 +211,91 @@ The app will:
 
 ## Deployment
 
-The app is configured for Render.com deployment via `render.yaml`:
+### Supabase Database Setup (Recommended)
 
-1. **Connect GitHub repository** to Render
-2. **Set environment variables** in Render dashboard
-3. **Deploy** - automatic from main branch
+The app supports both SQLite (local development) and PostgreSQL (production). For production, use Supabase for free PostgreSQL hosting:
+
+1. **Create Supabase project**
+   - Go to [supabase.com](https://supabase.com) and create account
+   - Click "New Project"
+   - Choose project name (e.g., `golf-pickem`)
+   - Set and save database password
+   - Select region closest to you
+   - Wait ~2 minutes for project creation
+
+2. **Get connection string**
+   - Go to Settings → Database in Supabase dashboard
+   - Copy "Connection string" (URI format)
+   - Format: `postgresql://postgres:[PASSWORD]@db.[REGION].supabase.co:5432/postgres`
+   - Replace `[PASSWORD]` with your database password
+
+3. **Test locally with Supabase (optional)**
+   ```bash
+   DATABASE_URL=postgresql://postgres:password@db.region.supabase.co:5432/postgres python app.py
+   ```
+
+### Deploy to Render
+
+The app uses `render.yaml` for automatic deployment configuration:
+
+1. **Push code to GitHub**
+   ```bash
+   git add .
+   git commit -m "Ready for deployment"
+   git push origin main
+   ```
+
+2. **Create Render service**
+   - Go to [render.com](https://render.com) and connect GitHub
+   - Click "New Web Service"
+   - Select your `golf-pickem` repository
+   - Choose `main` branch
+   - Render will auto-detect `render.yaml` settings
+
+3. **Add environment variables** in Render dashboard:
+   ```
+   DATABASE_URL=postgresql://postgres:password@db.region.supabase.co:5432/postgres
+   DATAGOLF_API_KEY=your_datagolf_api_key
+   SESSION_SECRET=<generate with: openssl rand -hex 32>
+   INVITE_CODE=your_secure_invite_code
+   GROUPME_BOT_ID=your_bot_id (optional)
+   GROUPME_ACCESS_TOKEN=your_access_token (optional)
+   GROUPME_GROUP_ID=your_group_id (optional)
+   ```
+
+4. **Deploy**
+   - Click "Create Web Service"
+   - Render will build and deploy automatically
+   - App will be live at `https://your-app-name.onrender.com`
+
+### Automatic Deployments
+
+Once connected, Render automatically deploys when you push to main:
+```bash
+git push origin main  # Triggers automatic deployment
+```
 
 ### Production Checklist
 
-- [ ] Set secure `SESSION_SECRET`
-- [ ] Configure PostgreSQL database URL
+- [ ] Create Supabase project and get DATABASE_URL
+- [ ] Set secure SESSION_SECRET (generate with `openssl rand -hex 32`)
 - [ ] Add DataGolf API key
-- [ ] Set up GroupMe bot (optional)
-- [ ] Set strong invite code
+- [ ] Set strong INVITE_CODE
+- [ ] Configure GroupMe credentials (optional)
 - [ ] Test registration flow
 - [ ] Verify live scoring sync
+- [ ] Check that picks post to GroupMe
+
+### Alternative Platforms
+
+The app works with any platform that supports Python web apps:
+
+- **Railway.app**: Similar to Render, includes built-in PostgreSQL
+- **Heroku**: Classic PaaS, requires PostgreSQL add-on
+- **DigitalOcean App Platform**: Scalable with managed databases
+- **Self-hosted VPS**: Full control, requires PostgreSQL installation
+
+Just set the same environment variables on any platform.
 
 ## API Integrations
 
