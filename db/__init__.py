@@ -3,62 +3,71 @@ from fastsql import Database
 from config import DATA_DIR, DATABASE_URL
 import logging
 import sqlalchemy as sa
-from sqlalchemy.exc import OperationalError, PendingRollbackError
+from sqlalchemy.exc import OperationalError, DBAPIError, PendingRollbackError
 
 logger = logging.getLogger(__name__)
 
 
-class PostgresDatabase(Database):
-    """Custom Database subclass with auto-reconnection for PostgreSQL.
+class ResilientConnection:
+    """Proxy wrapper that automatically handles connection failures."""
 
-    Handles Supabase free tier idle connection timeouts by:
-    - Automatically detecting stale/dropped connections
-    - Rolling back invalid transactions and reconnecting
-    - Retrying failed queries with fresh connections
+    def __init__(self, engine):
+        self.engine = engine
+        self._conn = engine.connect()
+
+    def _reconnect(self):
+        """Close stale connection and get fresh one."""
+        logger.warning("Reconnecting to database due to connection error")
+        try:
+            self._conn.close()
+        except Exception:
+            pass
+        self._conn = self.engine.connect()
+
+    def execute(self, *args, **kwargs):
+        """Execute with automatic retry on connection errors."""
+        try:
+            return self._conn.execute(*args, **kwargs)
+        except (OperationalError, DBAPIError, PendingRollbackError) as e:
+            logger.warning(f"Database error: {e}, attempting reconnect...")
+            try:
+                self._conn.rollback()
+            except Exception:
+                pass
+            self._reconnect()
+            # Retry once with fresh connection
+            return self._conn.execute(*args, **kwargs)
+
+    def __getattr__(self, name):
+        """Delegate all other attributes to the underlying connection."""
+        return getattr(self._conn, name)
+
+
+class PostgresDatabase(Database):
+    """Custom Database subclass with robust connection handling for PostgreSQL.
+
+    Handles Supabase free tier idle connection timeouts using a resilient
+    connection wrapper that automatically detects and recovers from stale connections.
     """
 
     def __init__(self, conn_str, pool_pre_ping=True, pool_recycle=300):
         self.conn_str = conn_str
+
+        # Create engine with connection pooling
         self.engine = sa.create_engine(
             conn_str,
             pool_pre_ping=pool_pre_ping,
             pool_recycle=pool_recycle,
         )
+
         self.meta = sa.MetaData()
         self.meta.reflect(bind=self.engine)
         self.meta.bind = self.engine
-        self.conn = self.engine.connect()
+
+        # Use resilient connection wrapper instead of direct connection
+        self.conn = ResilientConnection(self.engine)
         self.meta.conn = self.conn
         self._tables = {}
-
-    def _reconnect(self):
-        """Close stale connection and create a fresh one."""
-        logger.warning("Reconnecting to database due to stale connection")
-        try:
-            self.conn.close()
-        except Exception:
-            pass  # Connection might already be closed
-        self.conn = self.engine.connect()
-        self.meta.conn = self.conn
-
-    def execute(self, st, params=None, opts=None):
-        """Execute with automatic reconnection on connection errors."""
-        try:
-            return self.conn.execute(st, params, execution_options=opts)
-        except PendingRollbackError:
-            # Transaction is in invalid state - rollback and reconnect
-            logger.warning("PendingRollbackError detected, reconnecting...")
-            try:
-                self.conn.rollback()
-            except Exception:
-                pass
-            self._reconnect()
-            return self.conn.execute(st, params, execution_options=opts)
-        except OperationalError as e:
-            # Connection was dropped - reconnect and retry
-            logger.warning(f"OperationalError detected ({e}), reconnecting...")
-            self._reconnect()
-            return self.conn.execute(st, params, execution_options=opts)
 
 
 # Initialize database using fastsql (MiniDataAPI spec)
