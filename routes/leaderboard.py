@@ -314,8 +314,9 @@ def setup_leaderboard_routes(app):
                         # Reload tournament to get updated last_synced_at
                         tournament = next((t for t in db.tournaments() if t.id == tournament.id), tournament)
                 else:
-                    # Tournament doesn't match - set a message to inform the user
-                    auto_sync_message = f"Live scores are for '{api_event_name}', not '{tournament.name}'"
+                    # Tournament doesn't match - set a message to inform admins only
+                    if user.is_admin:
+                        auto_sync_message = f"Live scores are for '{api_event_name}', not '{tournament.name}'"
                     logger.info(f"Auto-sync skipped: tournament mismatch ({api_event_name} vs {tournament.name})")
             except Exception as e:
                 logger.error(f"Auto-sync failed: {e}", exc_info=True)
@@ -565,7 +566,11 @@ def setup_leaderboard_routes(app):
         # Calculate purse for header display
         from routes.utils import calculate_tournament_purse
         purse = calculate_tournament_purse(tournament, all_picks)
-        purse_display = P(Strong("💰 Purse: "), f"${purse}") if purse else None
+        purse_display = Div(
+            Strong("💰 Total Purse: "),
+            Span(f"${purse}" if purse else "Not set", style="font-size: 1.2em; color: #2e7d32;"),
+            cls="tournament-purse"
+        ) if purse or tournament.entry_price else None
 
         return page_shell(
             "Leaderboard",
