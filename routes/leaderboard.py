@@ -624,6 +624,11 @@ def setup_leaderboard_routes(app):
                 A("Make Picks", href="/picks", cls="btn btn-primary") if tournament.status == 'active' else None,
             )
 
+        # Calculate purse for header display
+        from routes.utils import calculate_tournament_purse
+        purse = calculate_tournament_purse(tournament, all_picks)
+        purse_display = P(Strong("💰 Purse: "), f"${purse}") if purse else None
+
         return page_shell(
             "Leaderboard",
             Div(
@@ -632,6 +637,7 @@ def setup_leaderboard_routes(app):
                     Div(
                         H1(f"Leaderboard: {tournament.name}"),
                         status_badge,
+                        purse_display,
                         cls="leaderboard-title"
                     ),
                     Div(
