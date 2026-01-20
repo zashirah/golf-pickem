@@ -576,6 +576,17 @@ def setup_leaderboard_routes(app):
                 style="display:inline;"
             )
 
+        # Send to GroupMe button (for admins)
+        groupme_send_button = None
+        if user.is_admin:
+            groupme_send_button = Form(
+                Button("💬 Send to GroupMe", type="submit", cls="btn btn-sm btn-info"),
+                Input(type="hidden", name="tournament_id", value=str(tournament.id)),
+                action="/leaderboard/send-groupme",
+                method="post",
+                style="display:inline; margin-left: 0.5rem;"
+            )
+
         # Build rows and cards
         if all_picks:
             rows_and_cards = [pick_row(p, i+1) for i, p in enumerate(all_picks)]
@@ -645,8 +656,9 @@ def setup_leaderboard_routes(app):
                         Div(
                             sync_info,
                             refresh_button,
+                            groupme_send_button,
                             style="display: flex; gap: 10px; align-items: center;"
-                        ) if sync_info or refresh_button else None,
+                        ) if sync_info or refresh_button or groupme_send_button else None,
                         cls="leaderboard-controls"
                     ),
                     cls="leaderboard-header"
@@ -793,6 +805,83 @@ def setup_leaderboard_routes(app):
             db.tournaments.update(id=tournament_id, last_synced_at=datetime.now().isoformat())
         except Exception as e:
             logger.error(f"Refresh error: {e}", exc_info=True)
+
+        return RedirectResponse(f"/leaderboard?tournament_id={tournament_id}", status_code=303)
+
+    @app.post("/leaderboard/send-groupme")
+    def send_leaderboard_groupme(request, tournament_id: int):
+        """Send current leaderboard standings to GroupMe."""
+        db = get_db()
+        user = get_current_user(request)
+        if not user or not user.is_admin:
+            return RedirectResponse("/leaderboard", status_code=303)
+
+        try:
+            from services.groupme import GroupMeClient
+
+            # Get tournament
+            tournament = None
+            for t in db.tournaments():
+                if t.id == tournament_id:
+                    tournament = t
+                    break
+
+            if not tournament:
+                return RedirectResponse("/leaderboard", status_code=303)
+
+            # Get bot_id from app_settings first, then fall back to config
+            bot_id = None
+            for setting in db.app_settings():
+                if setting.key == 'groupme_bot_id':
+                    bot_id = setting.value
+                    break
+
+            if not bot_id:
+                from config import GROUPME_BOT_ID
+                bot_id = GROUPME_BOT_ID
+
+            if not bot_id:
+                return RedirectResponse(f"/leaderboard?tournament_id={tournament_id}", status_code=303)
+
+            # Get standings
+            all_picks = [p for p in db.picks() if p.tournament_id == tournament_id]
+            standings = [s for s in db.pickem_standings() if s.tournament_id == tournament_id]
+            standings.sort(key=lambda s: s.rank if s.rank else 999)
+
+            users_by_id = {u.id: u for u in db.users()}
+
+            # Build message
+            from routes.utils import calculate_tournament_purse
+            purse = calculate_tournament_purse(tournament, all_picks)
+
+            message_lines = [f"🏌️ {tournament.name} - Top 10"]
+            if purse:
+                message_lines.append(f"💰 Purse: ${purse}")
+            message_lines.append("")
+
+            # Add top 10 standings
+            for i, standing in enumerate(standings[:10]):
+                if i >= 10:
+                    break
+                user = users_by_id.get(standing.user_id)
+                player_name = user.display_name if user else f"User {standing.user_id}"
+                rank = standing.rank if standing.rank else (i + 1)
+                score = standing.best_two_total if standing.best_two_total is not None else "DQ"
+
+                # Format score
+                from routes.utils import format_score
+                score_str = format_score(score) if isinstance(score, int) else str(score)
+
+                message_lines.append(f"{rank}. {player_name} - {score_str}")
+
+            message = "\n".join(message_lines)
+
+            # Send message
+            client = GroupMeClient(bot_id)
+            client.send_message(message)
+
+        except Exception as e:
+            logger.error(f"Failed to send leaderboard to GroupMe: {e}", exc_info=True)
 
         return RedirectResponse(f"/leaderboard?tournament_id={tournament_id}", status_code=303)
 
