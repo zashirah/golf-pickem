@@ -41,8 +41,8 @@ class Tournament:
     status: str = "upcoming"  # upcoming, active, completed
     picks_locked: bool = False
     last_synced_at: Optional[str] = None  # When results were last synced from DataGolf
-    entry_price: Optional[int] = None  # Price for 1 entry
-    three_entry_price: Optional[int] = None  # Discounted price for 3 entries
+    entry_price: Optional[int] = None  # Price for 1 entry (in dollars)
+    three_entry_price: Optional[int] = None  # Discounted price for 3 entries (in dollars)
     created_at: Optional[str] = None
     updated_at: Optional[str] = None
 

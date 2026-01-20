@@ -1005,8 +1005,8 @@ def setup_admin_routes(app):
         entries_for_tournament = [p for p in picks if p.tournament_id == tid]
         entry_count = len(entries_for_tournament)
 
-        entry_price = tournament.entry_price or 0
-        three_entry_price = tournament.three_entry_price or 0
+        entry_price = tournament.entry_price or 15
+        three_entry_price = tournament.three_entry_price or 35
         total_purse = entry_count * entry_price if entry_price > 0 else 0
 
         # Import alert for messages
@@ -1030,7 +1030,7 @@ def setup_admin_routes(app):
                                 id="entry_price",
                                 name="entry_price",
                                 value=str(entry_price) if entry_price else "",
-                                placeholder="e.g., 50",
+                                placeholder="Default: $15",
                                 min="0",
                                 step="1"
                             ),
@@ -1043,7 +1043,7 @@ def setup_admin_routes(app):
                                 id="three_entry_price",
                                 name="three_entry_price",
                                 value=str(three_entry_price) if three_entry_price else "",
-                                placeholder="e.g., 120",
+                                placeholder="Default: $35",
                                 min="0",
                                 step="1"
                             ),
