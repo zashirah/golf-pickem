@@ -829,20 +829,6 @@ def setup_leaderboard_routes(app):
             if not tournament:
                 return RedirectResponse("/leaderboard", status_code=303)
 
-            # Get bot_id from app_settings first, then fall back to config
-            bot_id = None
-            for setting in db.app_settings():
-                if setting.key == 'groupme_bot_id':
-                    bot_id = setting.value
-                    break
-
-            if not bot_id:
-                from config import GROUPME_BOT_ID
-                bot_id = GROUPME_BOT_ID
-
-            if not bot_id:
-                return RedirectResponse(f"/leaderboard?tournament_id={tournament_id}", status_code=303)
-
             # Get standings
             all_picks = [p for p in db.picks() if p.tournament_id == tournament_id]
             standings = [s for s in db.pickem_standings() if s.tournament_id == tournament_id]
@@ -876,8 +862,8 @@ def setup_leaderboard_routes(app):
 
             message = "\n".join(message_lines)
 
-            # Send message
-            client = GroupMeClient(bot_id)
+            # Send message (GroupMeClient will check app_settings and env var for bot_id)
+            client = GroupMeClient(db_module=db)
             client.send_message(message)
 
         except Exception as e:

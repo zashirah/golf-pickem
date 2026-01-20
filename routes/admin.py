@@ -1056,11 +1056,10 @@ def setup_admin_routes(app):
         try:
             from services.groupme import GroupMeClient
 
-            bot_id = _get_groupme_bot_id(db)
-            if not bot_id:
+            client = GroupMeClient(db_module=db)
+            if not client.bot_id:
                 return RedirectResponse("/admin?error=No GroupMe bot ID configured", status_code=303)
 
-            client = GroupMeClient(bot_id)
             message = "🏌️ Test message from Golf Pick'em Admin"
             success = client.send_message(message)
 
@@ -1089,20 +1088,6 @@ def _send_final_leaderboard_groupme(db_module, tournament_id):
                 break
 
         if not tournament:
-            return
-
-        # Get bot_id from app_settings first, then fall back to config
-        bot_id = None
-        for setting in db_module.app_settings():
-            if setting.key == 'groupme_bot_id':
-                bot_id = setting.value
-                break
-
-        if not bot_id:
-            from config import GROUPME_BOT_ID
-            bot_id = GROUPME_BOT_ID
-
-        if not bot_id:
             return
 
         # Get standings
@@ -1136,8 +1121,8 @@ def _send_final_leaderboard_groupme(db_module, tournament_id):
 
         message = "\n".join(message_lines)
 
-        # Send message
-        client = GroupMeClient(bot_id)
+        # Send message (GroupMeClient will check app_settings and env var for bot_id)
+        client = GroupMeClient(db_module=db_module)
         client.send_message(message)
         logger.info(f"Sent final leaderboard for {tournament.name} to GroupMe")
 

@@ -329,20 +329,6 @@ def _send_pick_notification(db, user, tournament, entry, tier1, tier2, tier3, ti
     try:
         from services.groupme import GroupMeClient
 
-        # Get bot_id from app_settings first, then fall back to config
-        bot_id = None
-        for setting in db.app_settings():
-            if setting.key == 'groupme_bot_id':
-                bot_id = setting.value
-                break
-
-        if not bot_id:
-            from config import GROUPME_BOT_ID
-            bot_id = GROUPME_BOT_ID
-
-        if not bot_id:
-            return  # No bot configured, skip notification
-
         # Get golfer names
         golfers_by_id = {g.id: g for g in db.golfers()}
         tier1_name = golfers_by_id.get(tier1).name if tier1 and tier1 in golfers_by_id else "-"
@@ -365,8 +351,8 @@ Tier 3: {tier3_name}
 Tier 4: {tier4_name}
 💰 Total Purse: {purse_text}"""
 
-        # Send message
-        client = GroupMeClient(bot_id)
+        # Send message via GroupMeClient (will check app_settings and env var)
+        client = GroupMeClient(db_module=db)
         client.send_message(message)
     except Exception as e:
         import logging
