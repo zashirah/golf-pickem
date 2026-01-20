@@ -3,16 +3,18 @@ from fastsql import Database
 from config import DATA_DIR, DATABASE_URL
 import logging
 import sqlalchemy as sa
+from sqlalchemy.exc import OperationalError, PendingRollbackError
 
 logger = logging.getLogger(__name__)
 
 
 class PostgresDatabase(Database):
-    """Custom Database subclass with connection pooling options for PostgreSQL.
+    """Custom Database subclass with auto-reconnection for PostgreSQL.
 
     Handles Supabase free tier idle connection timeouts by:
-    - pool_pre_ping: Testing connections before use (detects stale connections)
-    - pool_recycle: Recycling connections every 5 minutes to prevent idle timeout
+    - Automatically detecting stale/dropped connections
+    - Rolling back invalid transactions and reconnecting
+    - Retrying failed queries with fresh connections
     """
 
     def __init__(self, conn_str, pool_pre_ping=True, pool_recycle=300):
@@ -28,6 +30,35 @@ class PostgresDatabase(Database):
         self.conn = self.engine.connect()
         self.meta.conn = self.conn
         self._tables = {}
+
+    def _reconnect(self):
+        """Close stale connection and create a fresh one."""
+        logger.warning("Reconnecting to database due to stale connection")
+        try:
+            self.conn.close()
+        except Exception:
+            pass  # Connection might already be closed
+        self.conn = self.engine.connect()
+        self.meta.conn = self.conn
+
+    def execute(self, st, params=None, opts=None):
+        """Execute with automatic reconnection on connection errors."""
+        try:
+            return self.conn.execute(st, params, execution_options=opts)
+        except PendingRollbackError:
+            # Transaction is in invalid state - rollback and reconnect
+            logger.warning("PendingRollbackError detected, reconnecting...")
+            try:
+                self.conn.rollback()
+            except Exception:
+                pass
+            self._reconnect()
+            return self.conn.execute(st, params, execution_options=opts)
+        except OperationalError as e:
+            # Connection was dropped - reconnect and retry
+            logger.warning(f"OperationalError detected ({e}), reconnecting...")
+            self._reconnect()
+            return self.conn.execute(st, params, execution_options=opts)
 
 
 # Initialize database using fastsql (MiniDataAPI spec)
