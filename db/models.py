@@ -39,6 +39,7 @@ class Tournament:
     end_date: Optional[str] = None
     status: str = "upcoming"  # upcoming, active, completed
     picks_locked: bool = False
+    last_synced_at: Optional[str] = None  # When results were last synced from DataGolf
     created_at: Optional[str] = None
     updated_at: Optional[str] = None
 

@@ -120,10 +120,19 @@ def setup_admin_routes(app):
                         ) for t in tournaments]),
                         cls="admin-table"
                     ) if tournaments else P("No tournaments. Sync from DataGolf."),
-                    Form(
-                        Button("Sync from DataGolf", type="submit", cls="btn btn-primary"),
-                        action="/admin/sync",
-                        method="post"
+                    Div(
+                        Form(
+                            Button("Sync from DataGolf", type="submit", cls="btn btn-primary"),
+                            action="/admin/sync",
+                            method="post",
+                            style="display:inline; margin-right:10px;"
+                        ),
+                        Form(
+                            Button("Update Statuses", type="submit", cls="btn btn-secondary"),
+                            action="/admin/update-statuses",
+                            method="post",
+                            style="display:inline;"
+                        ),
                     ),
                 ),
 
@@ -153,6 +162,69 @@ def setup_admin_routes(app):
             return RedirectResponse("/", status_code=303)
 
         auth_service.reset_invite_secret()
+        return RedirectResponse("/admin", status_code=303)
+
+    @app.post("/admin/update-statuses")
+    def update_tournament_statuses(request):
+        """Update tournament statuses based on dates and DataGolf data."""
+        db_module = get_db()
+        user = get_current_user(request)
+        if not user or not user.is_admin:
+            return RedirectResponse("/", status_code=303)
+
+        from services.datagolf import DataGolfClient
+        from datetime import datetime, timedelta
+
+        client = DataGolfClient()
+        now = datetime.now()
+        
+        try:
+            # Get current field updates to check tournament status
+            field_data = client.get_field_updates()
+            current_event_name = field_data.get('event_name', '')
+            current_round = field_data.get('current_round')
+            
+            logger.info(f"Current DataGolf event: {current_event_name}, round: {current_round}")
+            
+            for tournament in db_module.tournaments():
+                if not tournament.start_date:
+                    continue
+                
+                # Parse start date
+                try:
+                    start_date = datetime.fromisoformat(tournament.start_date.replace('Z', '+00:00'))
+                except:
+                    start_date = datetime.fromisoformat(tournament.start_date)
+                
+                # Get Tuesday of tournament week (tournament usually Thu-Sun)
+                # If start_date is Thursday, Tuesday is 2 days before
+                tuesday_of_week = start_date - timedelta(days=2)
+                
+                # Tournament should be active starting Tuesday of tournament week
+                if now >= tuesday_of_week and tournament.status == 'upcoming':
+                    logger.info(f"Setting {tournament.name} to active (today >= {tuesday_of_week.date()})")
+                    db_module.tournaments.update(id=tournament.id, status='active')
+                
+                # Check if this is the current tournament on DataGolf
+                if tournament.datagolf_name and tournament.datagolf_name == current_event_name:
+                    # If round 4 is complete or past, mark as completed
+                    if current_round and current_round >= 5:  # Round 5 means tournament is over
+                        if tournament.status != 'completed':
+                            logger.info(f"Setting {tournament.name} to completed (round {current_round})")
+                            db_module.tournaments.update(id=tournament.id, status='completed')
+                    
+                    # Lock picks at first tee time (when tournament becomes active and it's tournament day)
+                    if tournament.status == 'active' and not tournament.picks_locked:
+                        # Check if we're on or after tournament start day
+                        if now.date() >= start_date.date():
+                            logger.info(f"Locking picks for {tournament.name} (tournament started)")
+                            db_module.tournaments.update(id=tournament.id, picks_locked=True)
+            
+            logger.info("Tournament status update complete")
+            
+        except Exception as e:
+            logger.error(f"Error updating tournament statuses: {e}", exc_info=True)
+        
         return RedirectResponse("/admin", status_code=303)
 
     @app.post("/admin/toggle-lock")
@@ -283,6 +355,9 @@ def setup_admin_routes(app):
                     conn.commit()
                 
                 logger.info(f"Synced {len(results_data)} results for tournament {tournament_id}")
+
+            # Update tournament last_synced_at timestamp
+            db_module.tournaments.update(id=tournament_id, last_synced_at=now)
 
             # Calculate standings
             scoring.calculate_standings(tournament_id)

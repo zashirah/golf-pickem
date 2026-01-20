@@ -43,11 +43,14 @@ def setup_leaderboard_routes(app):
     """Register leaderboard routes."""
 
     @app.get("/leaderboard")
-    def leaderboard_page(request, tournament_id: int = None):
+    def leaderboard_page(request, tournament_id: int = None, message: str = None):
         db = get_db()
         user = get_current_user(request)
         if not user:
             return RedirectResponse("/login", status_code=303)
+
+        # Import alert for message display (will be set after auto-sync)
+        from components.layout import alert
 
         # Get tournaments that can be viewed (active or completed)
         all_tournaments = list(db.tournaments())
@@ -69,6 +72,119 @@ def setup_leaderboard_routes(app):
             # Default: active tournament, or most recently started completed
             active = [t for t in viewable if t.status == 'active']
             tournament = active[0] if active else viewable[0]
+
+        # Auto-sync if active tournament and >10 minutes since last sync
+        should_auto_sync = False
+        if tournament.status == 'active':
+            if not tournament.last_synced_at:
+                should_auto_sync = True
+            else:
+                try:
+                    last_sync = datetime.fromisoformat(tournament.last_synced_at.replace('Z', '+00:00'))
+                    minutes_since = (datetime.now() - last_sync).total_seconds() / 60
+                    if minutes_since > 10:
+                        should_auto_sync = True
+                except:
+                    pass
+        
+        # Auto-sync tracking variable
+        auto_sync_message = None
+        
+        if should_auto_sync:
+            logger.info(f"Auto-syncing {tournament.name} (>10 min since last sync)")
+            try:
+                from services.datagolf import DataGolfClient
+                from services.scoring import ScoringService
+                from sqlalchemy import text
+                
+                client = DataGolfClient()
+                scoring = ScoringService(db)
+                
+                live_data = client.get_live_stats()
+                api_event_name = live_data.get('event_name', '')
+                
+                # Only sync if tournament matches
+                if _tournament_names_match(tournament.name, api_event_name):
+                    live_stats = live_data.get('live_stats', [])
+                    golfers_by_dg_id = {g.datagolf_id: g for g in db.golfers()}
+                    
+                    now = datetime.now().isoformat()
+                    results_data = []
+                    
+                    for player in live_stats:
+                        dg_id = str(player.get('dg_id', ''))
+                        golfer = golfers_by_dg_id.get(dg_id)
+                        if not golfer:
+                            continue
+                        
+                        pos_str = player.get('position', '')
+                        position = None
+                        status = 'active'
+                        
+                        if pos_str:
+                            pos_clean = pos_str.replace('T', '').strip()
+                            if pos_clean.isdigit():
+                                position = int(pos_clean)
+                            elif pos_str.upper() in ('CUT', 'MC'):
+                                status = 'cut'
+                            elif pos_str.upper() in ('WD', 'W/D'):
+                                status = 'wd'
+                            elif pos_str.upper() == 'DQ':
+                                status = 'dq'
+                        
+                        results_data.append({
+                            'tournament_id': tournament.id,
+                            'golfer_id': golfer.id,
+                            'position': position,
+                            'score_to_par': player.get('total'),
+                            'status': status,
+                            'round_num': player.get('round'),
+                            'thru': player.get('thru'),
+                            'updated_at': now
+                        })
+                    
+                    if results_data:
+                        with db.db.engine.connect() as conn:
+                            conn.execute(text("DELETE FROM tournament_result WHERE tournament_id = :tid"), 
+                                        {"tid": tournament.id})
+                            
+                            values_list = []
+                            params = {}
+                            for i, r in enumerate(results_data):
+                                values_list.append(f"(:tid_{i}, :gid_{i}, :pos_{i}, :score_{i}, :status_{i}, :round_{i}, :thru_{i}, :updated_{i})")
+                                params[f"tid_{i}"] = r['tournament_id']
+                                params[f"gid_{i}"] = r['golfer_id']
+                                params[f"pos_{i}"] = r['position']
+                                params[f"score_{i}"] = r['score_to_par']
+                                params[f"status_{i}"] = r['status']
+                                params[f"round_{i}"] = r['round_num']
+                                params[f"thru_{i}"] = r['thru']
+                                params[f"updated_{i}"] = r['updated_at']
+                            
+                            sql = f"""
+                                INSERT INTO tournament_result 
+                                (tournament_id, golfer_id, position, score_to_par, status, round_num, thru, updated_at)
+                                VALUES {', '.join(values_list)}
+                            """
+                            conn.execute(text(sql), params)
+                            conn.commit()
+                        
+                        db.tournaments.update(id=tournament.id, last_synced_at=now)
+                        scoring.calculate_standings(tournament.id)
+                        logger.info(f"Auto-sync complete: {len(results_data)} results")
+                        
+                        # Reload tournament to get updated last_synced_at
+                        tournament = next((t for t in db.tournaments() if t.id == tournament.id), tournament)
+                else:
+                    # Tournament doesn't match - set a message to inform the user
+                    auto_sync_message = f"Live scores are for '{api_event_name}', not '{tournament.name}'"
+                    logger.info(f"Auto-sync skipped: tournament mismatch ({api_event_name} vs {tournament.name})")
+            except Exception as e:
+                logger.error(f"Auto-sync failed: {e}", exc_info=True)
+
+        # Create alert for any messages (from URL or auto-sync)
+        display_message = message or auto_sync_message
+        message_alert = alert(display_message, "warning") if display_message else None
 
         # Build tournament selector
         tournament_options = [
@@ -293,6 +409,35 @@ def setup_leaderboard_routes(app):
         elif tournament.status == 'completed':
             status_badge = Span("Final", cls="badge badge-final")
 
+        # Last sync info
+        sync_info = None
+        if tournament.last_synced_at:
+            try:
+                last_sync = datetime.fromisoformat(tournament.last_synced_at.replace('Z', '+00:00'))
+                minutes_ago = int((datetime.now() - last_sync).total_seconds() / 60)
+                if minutes_ago < 1:
+                    sync_text = "Updated just now"
+                elif minutes_ago == 1:
+                    sync_text = "Updated 1 minute ago"
+                else:
+                    sync_text = f"Updated {minutes_ago} minutes ago"
+                sync_info = Span(sync_text, cls="sync-info")
+            except:
+                sync_info = Span("Sync time unavailable", cls="sync-info")
+        elif tournament.status == 'active':
+            sync_info = Span("Never synced", cls="sync-info")
+
+        # Refresh button (for active tournaments)
+        refresh_button = None
+        if tournament.status == 'active' and user.is_admin:
+            refresh_button = Form(
+                Button("🔄 Refresh Scores", type="submit", cls="btn btn-sm btn-primary"),
+                Input(type="hidden", name="tournament_id", value=str(tournament.id)),
+                action="/leaderboard/refresh",
+                method="post",
+                style="display:inline;"
+            )
+
         # Build rows and cards
         if all_picks:
             rows_and_cards = [pick_row(p, i+1) for i, p in enumerate(all_picks)]
@@ -305,13 +450,22 @@ def setup_leaderboard_routes(app):
         return page_shell(
             "Leaderboard",
             Div(
+                message_alert,
                 Div(
                     Div(
                         H1(f"Leaderboard: {tournament.name}"),
                         status_badge,
                         cls="leaderboard-title"
                     ),
-                    tournament_selector,
+                    Div(
+                        tournament_selector,
+                        Div(
+                            sync_info,
+                            refresh_button,
+                            style="display: flex; gap: 10px; align-items: center;"
+                        ) if sync_info or refresh_button else None,
+                        cls="leaderboard-controls"
+                    ),
                     cls="leaderboard-header"
                 ),
                 P("Best 2 of 4 scores against par. Lowest total wins."),
@@ -347,13 +501,15 @@ def setup_leaderboard_routes(app):
         if not user:
             return RedirectResponse("/login", status_code=303)
 
+        from urllib.parse import quote
+
         global _last_refresh
         now = time.time()
         last = _last_refresh.get(tournament_id, 0)
 
         if now - last < 60:  # 60 seconds
             # Too soon, just redirect back
-            return RedirectResponse(f"/leaderboard?tournament_id={tournament_id}", status_code=303)
+            return RedirectResponse(f"/leaderboard?tournament_id={tournament_id}&message={quote('Please wait 60 seconds between refreshes')}", status_code=303)
 
         # Get tournament to validate
         tournament = None
@@ -379,11 +535,41 @@ def setup_leaderboard_routes(app):
             api_event_name = live_data.get('event_name', '')
             if not _tournament_names_match(tournament.name, api_event_name):
                 logger.warning(f"Refresh skipped: API returning '{api_event_name}', not '{tournament.name}'")
-                return RedirectResponse(f"/leaderboard?tournament_id={tournament_id}", status_code=303)
-
-            _last_refresh[tournament_id] = now
+                msg = f"Can't sync: DataGolf is showing '{api_event_name}', not '{tournament.name}'"
+                return RedirectResponse(f"/leaderboard?tournament_id={tournament_id}&message={quote(msg)}", status_code=303)
 
             live_stats = live_data.get('live_stats', [])
+            
+            # Check if anyone is currently playing (not all finished for the day)
+            # A player is "playing" if their thru < 18 for the current round
+            players_on_course = 0
+            players_finished = 0
+            current_round = live_data.get('current_round', 1)
+            
+            for player in live_stats:
+                thru = player.get('thru')
+                if thru is not None:
+                    if thru < 18:
+                        players_on_course += 1
+                    else:
+                        players_finished += 1
+            
+            # If no one is on the course but there are results, round is complete
+            if players_on_course == 0 and players_finished > 0:
+                logger.info(f"Round {current_round} complete - all {players_finished} players finished")
+                # Check if we already synced recently (within 30 min) - no need to keep syncing
+                if tournament.last_synced_at:
+                    try:
+                        last_sync = datetime.fromisoformat(tournament.last_synced_at.replace('Z', '+00:00'))
+                        minutes_since = (datetime.now() - last_sync).total_seconds() / 60
+                        if minutes_since < 30:
+                            msg = f"Round {current_round} complete. All players finished - scores are final."
+                            return RedirectResponse(f"/leaderboard?tournament_id={tournament_id}&message={quote(msg)}", status_code=303)
+                    except:
+                        pass
+            
+            _last_refresh[tournament_id] = now
+
             golfers_by_dg_id = {g.datagolf_id: g for g in db.golfers()}
 
             for player in live_stats:
@@ -437,6 +623,9 @@ def setup_leaderboard_routes(app):
                     )
 
             scoring.calculate_standings(tournament_id)
+            
+            # Update last_synced_at timestamp
+            db.tournaments.update(id=tournament_id, last_synced_at=datetime.now().isoformat())
         except Exception as e:
             logger.error(f"Refresh error: {e}", exc_info=True)
 
