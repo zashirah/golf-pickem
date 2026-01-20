@@ -93,7 +93,7 @@ def setup_admin_routes(app):
                 card(
                     "Tournaments",
                     Table(
-                        Thead(Tr(Th("Name"), Th("Status"), Th("Picks"), Th("Actions"))),
+                        Thead(Tr(Th("Name"), Th("Status"), Th("Picks"), Th("Pricing"), Th("Actions"))),
                         Tbody(*[Tr(
                             Td(t.name),
                             Td(
@@ -104,7 +104,13 @@ def setup_admin_routes(app):
                                 Span("Locked", cls="badge badge-locked") if t.picks_locked else Span("Open", cls="badge badge-open")
                             ),
                             Td(
+                                f"${t.entry_price}" if t.entry_price else "-",
+                                " | " if t.entry_price and t.three_entry_price else None,
+                                f"3-pack: ${t.three_entry_price}" if t.three_entry_price else None
+                            ),
+                            Td(
                                 A("Field", href=f"/admin/tournament/{t.id}/field", cls="btn btn-sm"),
+                                A("Pricing", href=f"/admin/tournament/{t.id}/pricing", cls="btn btn-sm"),
                                 Form(
                                     Button("Unlock" if t.picks_locked else "Lock", type="submit", cls="btn btn-sm"),
                                     Input(type="hidden", name="tournament_id", value=str(t.id)),
@@ -865,3 +871,113 @@ def setup_admin_routes(app):
             logger.error(f"Auto-assign error: {e}", exc_info=True)
 
         return RedirectResponse(f"/admin/tournament/{tid}/field", status_code=303)
+
+    @app.get("/admin/tournament/{tid}/pricing")
+    def tournament_pricing_page(request, tid: int):
+        """Edit tournament entry pricing."""
+        db = get_db()
+        user = get_current_user(request)
+        if not user or not user.is_admin:
+            return RedirectResponse("/", status_code=303)
+
+        tournament = None
+        for t in db.tournaments():
+            if t.id == tid:
+                tournament = t
+                break
+
+        if not tournament:
+            return RedirectResponse("/admin", status_code=303)
+
+        # Get entry count for this tournament
+        picks = list(db.picks())
+        entries_for_tournament = [p for p in picks if p.tournament_id == tid]
+        entry_count = len(entries_for_tournament)
+
+        entry_price = tournament.entry_price or 0
+        three_entry_price = tournament.three_entry_price or 0
+        total_purse = entry_count * entry_price if entry_price > 0 else 0
+
+        return page_shell(
+            "Tournament Pricing",
+            Div(
+                H1(f"Pricing: {tournament.name}"),
+                card(
+                    "Entry Pricing",
+                    Form(
+                        Div(
+                            Label("Single Entry Price ($)", For="entry_price"),
+                            Input(
+                                type="number",
+                                id="entry_price",
+                                name="entry_price",
+                                value=str(entry_price) if entry_price else "",
+                                placeholder="e.g., 50",
+                                min="0",
+                                step="1"
+                            ),
+                            cls="form-group"
+                        ),
+                        Div(
+                            Label("3-Entry Package Price ($)", For="three_entry_price"),
+                            Input(
+                                type="number",
+                                id="three_entry_price",
+                                name="three_entry_price",
+                                value=str(three_entry_price) if three_entry_price else "",
+                                placeholder="e.g., 120",
+                                min="0",
+                                step="1"
+                            ),
+                            cls="form-group"
+                        ),
+                        Button("Save Pricing", type="submit", cls="btn btn-primary"),
+                        action=f"/admin/tournament/{tid}/pricing",
+                        method="post"
+                    )
+                ),
+                card(
+                    "Purse Summary",
+                    Div(
+                        P(Strong(f"Total Entries: "), f"{entry_count}"),
+                        P(Strong(f"Price per Entry: "), f"${entry_price}" if entry_price > 0 else "Not set"),
+                        P(Strong(f"Total Purse: "), f"${total_purse}" if entry_price > 0 else "No pricing set"),
+                        cls="purse-info"
+                    )
+                ),
+                A("← Back to Admin", href="/admin", cls="btn btn-secondary", style="margin-top: 20px;"),
+                cls="pricing-page"
+            ),
+            user=user
+        )
+
+    @app.post("/admin/tournament/{tid}/pricing")
+    def update_tournament_pricing(request, tid: int, entry_price: int = None, three_entry_price: int = None):
+        """Update tournament pricing."""
+        db = get_db()
+        user = get_current_user(request)
+        if not user or not user.is_admin:
+            return RedirectResponse("/", status_code=303)
+
+        # Find tournament
+        tournament = None
+        for t in db.tournaments():
+            if t.id == tid:
+                tournament = t
+                break
+
+        if not tournament:
+            return RedirectResponse("/admin", status_code=303)
+
+        # Update pricing fields
+        update_data = {}
+        if entry_price is not None:
+            update_data['entry_price'] = int(entry_price) if entry_price else None
+        if three_entry_price is not None:
+            update_data['three_entry_price'] = int(three_entry_price) if three_entry_price else None
+
+        if update_data:
+            db.tournaments.update(id=tid, **update_data)
+            logger.info(f"Updated pricing for tournament {tid}: {update_data}")
+
+        return RedirectResponse(f"/admin/tournament/{tid}/pricing", status_code=303)
