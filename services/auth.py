@@ -83,22 +83,22 @@ class AuthService:
         """Check if provided invite secret is valid."""
         return provided_secret == self.get_invite_secret()
 
-    def register_user(self, username: str, password: str, display_name: str = None, groupme_name: str = None) -> tuple:
+    def register_user(self, groupme_name: str, password: str) -> tuple:
         """Register a new user. Returns (user, error_message)."""
-        # Check if username exists
-        existing = [u for u in self.db.users() if u.username == username]
+        # Check if groupme_name exists
+        existing = [u for u in self.db.users() if u.groupme_name == groupme_name]
         if existing:
-            return None, "Username already taken"
+            return None, "GroupMe name already registered"
 
         # Check if first user (make admin)
         all_users = list(self.db.users())
         is_admin = len(all_users) == 0
 
-        # Create user
+        # Create user - use groupme_name for both username and display_name for backwards compatibility
         user = self.db.users.insert(
-            username=username,
+            username=groupme_name,
             password_hash=hash_password(password),
-            display_name=display_name or username,
+            display_name=groupme_name,
             groupme_name=groupme_name,
             is_admin=is_admin,
             created_at=datetime.now().isoformat()
@@ -106,22 +106,22 @@ class AuthService:
 
         return user, None
 
-    def login(self, username: str, password: str) -> tuple:
+    def login(self, groupme_name: str, password: str) -> tuple:
         """Authenticate user. Returns (session_token, error_message)."""
-        logger.info(f"Login attempt for username: {username}")
+        logger.info(f"Login attempt for GroupMe name: {groupme_name}")
         
-        # Fetch all users and check for username
+        # Fetch all users and check for groupme_name
         all_users = list(self.db.users())
         logger.debug(f"Total users in database: {len(all_users)}")
         
-        users = [u for u in all_users if u.username == username]
+        users = [u for u in all_users if u.groupme_name == groupme_name]
         if not users:
-            logger.warning(f"Login failed: username '{username}' not found")
-            logger.debug(f"Available usernames: {[u.username for u in all_users]}")
-            return None, "Invalid username or password"
+            logger.warning(f"Login failed: GroupMe name '{groupme_name}' not found")
+            logger.debug(f"Available GroupMe names: {[u.groupme_name for u in all_users]}")
+            return None, "Invalid GroupMe name or password"
 
         user = users[0]
-        logger.debug(f"Found user: id={user.id}, username={user.username}, is_admin={user.is_admin}")
+        logger.debug(f"Found user: id={user.id}, groupme_name={user.groupme_name}, is_admin={user.is_admin}")
         logger.debug(f"Stored password hash: {user.password_hash[:20]}...")
         
         # Verify password
@@ -129,11 +129,11 @@ class AuthService:
         logger.debug(f"Password verification result: {password_valid}")
         
         if not password_valid:
-            logger.warning(f"Login failed: invalid password for username '{username}'")
-            return None, "Invalid username or password"
+            logger.warning(f"Login failed: invalid password for GroupMe name '{groupme_name}'")
+            return None, "Invalid GroupMe name or password"
 
         # Create session
-        logger.info(f"Login successful for user '{username}' (id={user.id})")
+        logger.info(f"Login successful for user '{groupme_name}' (id={user.id})")
         token = generate_session_token()
         
         try:

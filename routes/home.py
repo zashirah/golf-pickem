@@ -41,7 +41,7 @@ def setup_home_routes(app):
         return page_shell(
             "Dashboard",
             Div(
-                H1(f"Welcome, {user.display_name or user.username}"),
+                H1(f"Welcome, {user.groupme_name or user.username}"),
                 card(
                     "Current Tournament",
                     P(current.name if current else "No active tournament"),
@@ -59,3 +59,81 @@ def setup_home_routes(app):
     @rt("/static/{fname:path}")
     def static_file(fname: str):
         return FileResponse(f"static/{fname}")
+
+    @rt("/profile")
+    def profile_page(request, error: str = None, success: str = None):
+        """Profile page for editing user's GroupMe name."""
+        db = get_db()
+        user = get_current_user(request)
+
+        if not user:
+            return RedirectResponse("/login", status_code=303)
+
+        from components.layout import alert
+
+        error_msg = alert(error, "error") if error else None
+        success_msg = alert(success, "success") if success else None
+
+        return page_shell(
+            "Profile",
+            Div(
+                H1("Profile Settings"),
+                error_msg,
+                success_msg,
+                card(
+                    "GroupMe Name",
+                    Form(
+                        P("This is how your name appears on the leaderboard, in GroupMe notifications, and how you log in."),
+                        Div(
+                            Label("GroupMe Name", fr="groupme_name"),
+                            Input(
+                                type="text",
+                                name="groupme_name",
+                                id="groupme_name",
+                                value=user.groupme_name or "",
+                                required=True,
+                                placeholder="Your GroupMe display name"
+                            ),
+                            cls="form-group"
+                        ),
+                        Button("Update Name", type="submit", cls="btn btn-primary"),
+                        action="/profile",
+                        method="post"
+                    )
+                ),
+                cls="profile-page"
+            ),
+            user=user
+        )
+
+    @rt("/profile")
+    def update_profile(request, groupme_name: str):
+        """Update user's GroupMe name."""
+        db = get_db()
+        user = get_current_user(request)
+
+        if not user:
+            return RedirectResponse("/login", status_code=303)
+
+        if not groupme_name or not groupme_name.strip():
+            return RedirectResponse("/profile?error=GroupMe name cannot be empty", status_code=303)
+
+        # Verify GroupMe membership if configured
+        from services.groupme import GroupMeClient
+        from config import GROUPME_ACCESS_TOKEN, GROUPME_GROUP_ID
+
+        if GROUPME_ACCESS_TOKEN and GROUPME_GROUP_ID:
+            client = GroupMeClient()
+            is_member = client.verify_member(groupme_name, GROUPME_GROUP_ID, GROUPME_ACCESS_TOKEN)
+            if not is_member:
+                return RedirectResponse("/profile?error=GroupMe name not found in group. Please check spelling.", status_code=303)
+
+        # Update user's groupme_name (and also update display_name for backwards compatibility)
+        db.user.update(
+            id=user.id,
+            groupme_name=groupme_name,
+            display_name=groupme_name
+        )
+
+        return RedirectResponse("/profile?success=Profile updated successfully", status_code=303)
+

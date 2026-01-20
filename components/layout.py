@@ -26,7 +26,7 @@ def nav_header(user=None):
                 A("Golf Pick'em", href="/", cls="logo"),
                 Nav(*nav_items, cls="nav-links"),
                 Div(
-                    Span(user.display_name or user.username, cls="user-name"),
+                    A(user.groupme_name or user.username, href="/profile", cls="user-name"),
                     A("Logout", href="/logout", cls="btn btn-sm"),
                     cls="user-section"
                 ),

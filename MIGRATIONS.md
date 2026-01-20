@@ -5,7 +5,8 @@ This document describes database schema migrations for the Golf Pick'em applicat
 
 ## Migration 001: Add GroupMe and Pricing Fields
 **Date:** 2026-01-19
-**Status:** ✅ Applied to local database
+**Status:** ✅ Applied to local database (SQLite)
+**Status:** ✅ Applied to production database (PostgreSQL/Supabase)
 
 ### Purpose
 Adds support for:

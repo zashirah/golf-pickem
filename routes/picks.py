@@ -346,7 +346,7 @@ def _send_pick_notification(db, user, tournament, entry, tier1, tier2, tier3, ti
         purse_text = f"${purse}" if purse else "Not set"
 
         # Build message
-        display_name = user.display_name or user.username
+        display_name = user.groupme_name or user.username
         message = f"""🏌️ {display_name} {action} Entry {entry} for {tournament.name}
 Tier 1: {tier1_name}
 Tier 2: {tier2_name}

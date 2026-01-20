@@ -174,11 +174,20 @@ def setup_admin_routes(app):
                 card(
                     "Users",
                     Table(
-                        Thead(Tr(Th("Username"), Th("Display Name"), Th("Admin"))),
+                        Thead(Tr(Th("GroupMe Name"), Th("Admin"), Th("Actions"))),
                         Tbody(*[Tr(
-                            Td(u.username),
-                            Td(u.display_name or "-"),
-                            Td("Yes" if u.is_admin else "No")
+                            Td(u.groupme_name or u.username or "-"),
+                            Td("Yes" if u.is_admin else "No"),
+                            Td(
+                                Form(
+                                    Input(type="hidden", name="user_id", value=str(u.id)),
+                                    Button("Delete", type="submit", cls="btn btn-sm btn-danger",
+                                           onclick="return confirm('Are you sure you want to delete this user? This will also delete all their picks and standings.');"),
+                                    action="/admin/delete-user",
+                                    method="post",
+                                    style="display:inline"
+                                ) if not u.is_admin else None,
+                            )
                         ) for u in users]),
                         cls="admin-table"
                     ),
@@ -232,6 +241,53 @@ def setup_admin_routes(app):
 
         auth_service.reset_invite_secret()
         return RedirectResponse("/admin", status_code=303)
+
+    @app.post("/admin/delete-user")
+    def delete_user(request, user_id: int):
+        """Delete a user and all their associated data."""
+        db = get_db()
+        user = get_current_user(request)
+        if not user or not user.is_admin:
+            return RedirectResponse("/", status_code=303)
+
+        try:
+            # Get the user to delete
+            users_to_delete = [u for u in db.users() if u.id == user_id]
+            if not users_to_delete:
+                return RedirectResponse("/admin?error=User not found", status_code=303)
+
+            user_to_delete = users_to_delete[0]
+
+            # Prevent deleting admin users
+            if user_to_delete.is_admin:
+                return RedirectResponse("/admin?error=Cannot delete admin users", status_code=303)
+
+            # Delete associated data
+            # Delete picks
+            picks_to_delete = [p for p in db.picks() if p.user_id == user_id]
+            for pick in picks_to_delete:
+                db.picks.delete(pick.id)
+
+            # Delete standings
+            standings_to_delete = [s for s in db.pickem_standings() if s.user_id == user_id]
+            for standing in standings_to_delete:
+                db.pickem_standings.delete(standing.id)
+
+            # Delete sessions
+            sessions_to_delete = [s for s in db.sessions() if s.user_id == user_id]
+            for session in sessions_to_delete:
+                db.sessions.delete(session.id)
+
+            # Finally delete the user
+            db.users.delete(user_id)
+
+            logger.info(f"Admin {user.groupme_name} deleted user {user_to_delete.groupme_name} (id={user_id})")
+            return RedirectResponse("/admin?success=User deleted successfully", status_code=303)
+
+        except Exception as e:
+            logger.error(f"Failed to delete user {user_id}: {e}", exc_info=True)
+            return RedirectResponse("/admin?error=Failed to delete user", status_code=303)
+
 
     @app.post("/admin/update-statuses")
     def update_tournament_statuses(request):

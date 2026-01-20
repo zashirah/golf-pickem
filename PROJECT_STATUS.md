@@ -57,6 +57,7 @@ golf-pickem/
 - [ ] _None currently_
 
 ## Next Steps / Backlog
+- [ ] **Admin bulk edit for existing users' GroupMe names** - Add admin UI to set `groupme_name` for existing users who registered before this field was required. Could be a simple form on the admin dashboard with dropdowns/inputs for each user without a GroupMe name.
 - [ ] **PostgreSQL/Supabase integration** - Replace SQLite with Postgres for production; wire `DATABASE_URL`, migrations, and deployment docs
 - [ ] **Upgrade password hashing to bcrypt** - Current implementation uses SHA-256 with salt, which works but bcrypt/argon2 is more secure for password storage (resistant to GPU attacks, configurable work factor). Low priority for MVP but should be done before public launch.
 - [ ] **Automatic tournament status updates** - Set tournaments to "active" on Thursday (tournament start) and "completed" after Sunday. Consider Tuesday-Monday as "tournament week" for picks.
@@ -210,6 +211,39 @@ _Add notes here at the end of each session to provide context for the next one._
   - Mobile cards show: rank, player name, total score (collapsed), golfer details (expandable)
   - Removed conflicting old table-to-card transformation CSS
   - Optimized for 375px mobile width with proper touch targets and spacing
+
+### Session: 2026-01-19 (GroupMe Feature Completion)
+- **Applied PostgreSQL migration to production:**
+  - Ran migration 001 manually against Supabase database
+  - Added `groupme_name` column to user table
+  - Added pricing fields (`entry_price`, `three_entry_price`) to tournament table
+  - Updated MIGRATIONS.md to reflect production deployment
+- **Made GroupMe name required for new users:**
+  - Removed `display_name` field from registration form
+  - Made `groupme_name` required with GroupMe membership verification
+  - Set `display_name` = `groupme_name` in DB for backwards compatibility
+  - Existing users without `groupme_name` display username as fallback
+- **Replaced `display_name` with `groupme_name` throughout UI:**
+  - Updated welcome message, nav header, leaderboard, pick notifications
+  - All user displays now use `groupme_name or username` fallback pattern
+  - Ensures existing users without GroupMe names still display correctly
+- **Added profile page for editing GroupMe name:**
+  - New `/profile` route accessible via clicking username in nav
+  - Form to update GroupMe name with live verification against GroupMe API
+  - Updates both `groupme_name` and `display_name` for consistency
+  - Shows success/error messages after update
+- **Admin improvements:**
+  - Added "GroupMe Name" column to admin Users table
+  - Shows "-" for users without GroupMe names (helps identify who needs values added)
+- **Documented future feature:** Admin bulk edit for existing users' GroupMe names in PROJECT_STATUS.md backlog
+
+**Architecture changes:**
+- Registration now enforces GroupMe membership verification
+- Profile page uses same verification logic for updates
+- Navigation header username is now clickable link to profile
+- All display names consolidated to use `groupme_name` as primary field
+
+**Note:** `display_name` column kept in database for backwards compatibility but UI now primarily uses `groupme_name`.
 
 ---
 *Last updated: 2026-01-19*
