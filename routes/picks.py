@@ -1,4 +1,5 @@
 """Picks routes - user pick management."""
+import logging
 from datetime import datetime
 
 from fasthtml.common import *
@@ -6,6 +7,8 @@ from starlette.responses import RedirectResponse
 
 from components.layout import page_shell, card, alert
 from routes.utils import get_current_user, get_db, get_active_tournament
+
+logger = logging.getLogger(__name__)
 
 
 def setup_picks_routes(app):
@@ -105,6 +108,9 @@ def setup_picks_routes(app):
                     and p.tournament_id == tournament.id
                     and (getattr(p, 'entry_number', 1) or 1) == entry]
 
+        is_update = bool(existing)
+        action = "updated" if is_update else "created"
+
         if existing:
             # Update existing entry
             db.picks.update(
@@ -129,6 +135,9 @@ def setup_picks_routes(app):
                 created_at=datetime.now().isoformat(),
                 updated_at=datetime.now().isoformat()
             )
+
+        # Send GroupMe notification
+        _send_pick_notification(db, user, tournament, entry, tier1, tier2, tier3, tier4, action)
 
         return RedirectResponse("/picks", status_code=303)
 
@@ -316,3 +325,37 @@ def _render_edit_view(tournament, all_user_picks, current_entry, user_pick,
         ),
         user=user
     )
+
+
+def _send_pick_notification(db, user, tournament, entry, tier1, tier2, tier3, tier4, action):
+    """Send GroupMe notification for pick creation/update."""
+    try:
+        from services.groupme import GroupMeClient
+
+        # Get golfer names
+        golfers_by_id = {g.id: g for g in db.golfers()}
+        tier1_name = golfers_by_id.get(tier1).name if tier1 and tier1 in golfers_by_id else "-"
+        tier2_name = golfers_by_id.get(tier2).name if tier2 and tier2 in golfers_by_id else "-"
+        tier3_name = golfers_by_id.get(tier3).name if tier3 and tier3 in golfers_by_id else "-"
+        tier4_name = golfers_by_id.get(tier4).name if tier4 and tier4 in golfers_by_id else "-"
+
+        # Calculate purse
+        all_picks = [p for p in db.picks() if p.tournament_id == tournament.id]
+        from routes.utils import calculate_tournament_purse
+        purse = calculate_tournament_purse(tournament, all_picks)
+        purse_text = f"${purse}" if purse else "Not set"
+
+        # Build message
+        display_name = user.groupme_name or user.username
+        message = f"""🏌️ {display_name} {action} Entry {entry} for {tournament.name}
+Tier 1: {tier1_name}
+Tier 2: {tier2_name}
+Tier 3: {tier3_name}
+Tier 4: {tier4_name}
+💰 Total Purse: {purse_text}"""
+
+        # Send message via GroupMeClient (will check app_settings and env var)
+        client = GroupMeClient(db_module=db)
+        client.send_message(message)
+    except Exception as e:
+        logger.error(f"Failed to send pick notification: {e}", exc_info=True)

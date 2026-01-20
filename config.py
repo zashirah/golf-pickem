@@ -18,6 +18,11 @@ DATABASE_URL = os.getenv("DATABASE_URL", f"sqlite:///{DATABASE_PATH}")
 # DataGolf API
 DATAGOLF_API_KEY = os.getenv("DATAGOLF_API_KEY", "")
 
+# GroupMe Integration
+GROUPME_BOT_ID = os.getenv("GROUPME_BOT_ID", "")
+GROUPME_ACCESS_TOKEN = os.getenv("GROUPME_ACCESS_TOKEN", "")  # For API verification
+GROUPME_GROUP_ID = os.getenv("GROUPME_GROUP_ID", "")  # Group to verify membership
+
 # App settings
 APP_NAME = "Golf Pick'em"
 SECRET_KEY = os.getenv("SECRET_KEY", "dev-secret-change-in-production")

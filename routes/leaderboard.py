@@ -314,8 +314,9 @@ def setup_leaderboard_routes(app):
                         # Reload tournament to get updated last_synced_at
                         tournament = next((t for t in db.tournaments() if t.id == tournament.id), tournament)
                 else:
-                    # Tournament doesn't match - set a message to inform the user
-                    auto_sync_message = f"Live scores are for '{api_event_name}', not '{tournament.name}'"
+                    # Tournament doesn't match - set a message to inform admins only
+                    if user.is_admin:
+                        auto_sync_message = f"Live scores are for '{api_event_name}', not '{tournament.name}'"
                     logger.info(f"Auto-sync skipped: tournament mismatch ({api_event_name} vs {tournament.name})")
             except Exception as e:
                 logger.error(f"Auto-sync failed: {e}", exc_info=True)
@@ -376,7 +377,7 @@ def setup_leaderboard_routes(app):
             standing = standings_by_key.get((pick.user_id, entry_number))
 
             # Show entry number if user has multiple entries
-            display_name = u.display_name if u else "Unknown"
+            display_name = (u.groupme_name or u.username) if u else "Unknown"
             if entries_per_user.get(pick.user_id, 1) > 1:
                 display_name = f"{display_name} ({entry_number})"
 
@@ -452,71 +453,8 @@ def setup_leaderboard_routes(app):
             rank_display = str(standing.rank) if standing and standing.rank else "-"
             is_current = u and u.id == user.id
 
-            # Build golfer detail rows for mobile expandable view
-            def golfer_detail(tier_num, golfer_id, score):
-                name = get_golfer_name(golfer_id)
-                result = results.get(golfer_id)
-
-                if score is None:
-                    if not has_results:
-                        score_display = "-"
-                    elif result and result.status in ('cut', 'mc'):
-                        score_display = "MC"
-                    elif result and result.status == 'wd':
-                        score_display = "WD"
-                    elif result and result.status == 'dq':
-                        score_display = "DQ"
-                    elif result is None:
-                        score_display = "-"
-                    else:
-                        score_display = "E"
-                else:
-                    score_display = format_score(score)
-
-                thru_info = ""
-                if result and result.thru and tournament.status == 'active':
-                    if result.thru == 18:
-                        thru_info = " (F)"
-                    else:
-                        thru_info = f" ({result.thru})"
-
-                score_cls = ""
-                if score is not None:
-                    if score < 0:
-                        score_cls = "under-par"
-                    elif score > 0:
-                        score_cls = "over-par"
-                elif result and result.status in ('cut', 'mc'):
-                    score_cls = "missed-cut"
-
-                return Div(
-                    Span(f"T{tier_num}", cls="detail-tier"),
-                    Span(name, cls="detail-name"),
-                    Span(f"{score_display}{thru_info}", cls=f"detail-score {score_cls}"),
-                    cls="golfer-detail-row"
-                )
-
-            # Mobile expandable card (hidden on desktop, shown on mobile via CSS)
-            mobile_card = Div(
-                Details(
-                    Summary(
-                        Span(rank_display, cls="card-rank"),
-                        Span(display_name, cls="card-player"),
-                        Span(total_display, cls="card-total"),
-                    ),
-                    Div(
-                        golfer_detail(1, pick.tier1_golfer_id, t1_score),
-                        golfer_detail(2, pick.tier2_golfer_id, t2_score),
-                        golfer_detail(3, pick.tier3_golfer_id, t3_score),
-                        golfer_detail(4, pick.tier4_golfer_id, t4_score),
-                        cls="golfer-details"
-                    ),
-                ),
-                cls=f"leaderboard-card {'current-user-card' if is_current else ''}"
-            )
-
-            # Desktop table row (hidden on mobile via CSS)
-            desktop_row = Tr(
+            # Table row
+            return Tr(
                 Td(rank_display, cls="rank"),
                 Td(display_name, cls="player-name"),
                 cell(pick.tier1_golfer_id, t1_score),
@@ -524,10 +462,8 @@ def setup_leaderboard_routes(app):
                 cell(pick.tier3_golfer_id, t3_score),
                 cell(pick.tier4_golfer_id, t4_score),
                 Td(total_display, cls="total"),
-                cls=f"desktop-row {'current-user' if is_current else ''}"
+                cls=f"{'current-user' if is_current else ''}"
             )
-
-            return (desktop_row, mobile_card)
 
         # Sort by standings if available, otherwise just show picks
         # DQ entries (None total) sort to bottom
@@ -576,14 +512,22 @@ def setup_leaderboard_routes(app):
                 style="display:inline;"
             )
 
-        # Build rows and cards
+        # Send to GroupMe button (for admins)
+        groupme_send_button = None
+        if user.is_admin:
+            groupme_send_button = Form(
+                Button("💬 Send to GroupMe", type="submit", cls="btn btn-sm btn-info"),
+                Input(type="hidden", name="tournament_id", value=str(tournament.id)),
+                action="/leaderboard/send-groupme",
+                method="post",
+                style="display:inline; margin-left: 0.5rem;"
+            )
+
+        # Build rows
         if all_picks:
-            rows_and_cards = [pick_row(p, i+1) for i, p in enumerate(all_picks)]
-            desktop_rows = [r[0] for r in rows_and_cards]
-            mobile_cards = [r[1] for r in rows_and_cards]
+            desktop_rows = [pick_row(p, i+1) for i, p in enumerate(all_picks)]
         else:
             desktop_rows = []
-            mobile_cards = []
 
         # Build tabs for switching views
         base_url = f"/leaderboard?tournament_id={tournament.id}"
@@ -603,7 +547,7 @@ def setup_leaderboard_routes(app):
             # Pick'em standings (default)
             tournament_content = Div(
                 P("Best 2 of 4 scores against par. Lowest total wins."),
-                # Desktop table (hidden on mobile)
+                # Leaderboard table
                 Table(
                     Thead(
                         Tr(
@@ -613,16 +557,45 @@ def setup_leaderboard_routes(app):
                         )
                     ),
                     Tbody(*desktop_rows),
-                    cls="leaderboard-table desktop-only"
-                ) if all_picks else None,
-                # Mobile cards (hidden on desktop)
-                Div(
-                    *mobile_cards,
-                    cls="leaderboard-cards mobile-only"
+                    cls="leaderboard-table"
                 ) if all_picks else None,
                 P("No picks yet for this tournament.") if not all_picks else None,
                 A("Make Picks", href="/picks", cls="btn btn-primary") if tournament.status == 'active' else None,
             )
+
+        # Calculate purse for header display
+        from routes.utils import calculate_tournament_purse
+        purse = calculate_tournament_purse(tournament, all_picks)
+        
+        # Build pricing info
+        pricing_info = []
+        if purse:
+            pricing_info.append(Div(
+                Strong("💰 Total Purse: "),
+                Span(f"${purse}", style="font-size: 1.2em; color: #2e7d32;"),
+                style="margin-right: 1.5rem;"
+            ))
+        if tournament.entry_price:
+            price_cents = tournament.entry_price
+            price_dollars = price_cents / 100
+            pricing_info.append(Div(
+                Strong("Entry: "),
+                Span(f"${price_dollars:.0f}", style="color: #666;"),
+                style="margin-right: 1rem;"
+            ))
+        if tournament.three_entry_price:
+            three_price_cents = tournament.three_entry_price
+            three_price_dollars = three_price_cents / 100
+            pricing_info.append(Div(
+                Strong("3-Pack: "),
+                Span(f"${three_price_dollars:.0f}", style="color: #666;")
+            ))
+        
+        purse_display = Div(
+            *pricing_info,
+            cls="tournament-purse",
+            style="display: flex; align-items: center; flex-wrap: wrap; gap: 0.5rem;"
+        ) if pricing_info else None
 
         return page_shell(
             "Leaderboard",
@@ -632,6 +605,7 @@ def setup_leaderboard_routes(app):
                     Div(
                         H1(f"Leaderboard: {tournament.name}"),
                         status_badge,
+                        purse_display,
                         cls="leaderboard-title"
                     ),
                     Div(
@@ -639,8 +613,9 @@ def setup_leaderboard_routes(app):
                         Div(
                             sync_info,
                             refresh_button,
+                            groupme_send_button,
                             style="display: flex; gap: 10px; align-items: center;"
-                        ) if sync_info or refresh_button else None,
+                        ) if sync_info or refresh_button or groupme_send_button else None,
                         cls="leaderboard-controls"
                     ),
                     cls="leaderboard-header"
@@ -787,6 +762,69 @@ def setup_leaderboard_routes(app):
             db.tournaments.update(id=tournament_id, last_synced_at=datetime.now().isoformat())
         except Exception as e:
             logger.error(f"Refresh error: {e}", exc_info=True)
+
+        return RedirectResponse(f"/leaderboard?tournament_id={tournament_id}", status_code=303)
+
+    @app.post("/leaderboard/send-groupme")
+    def send_leaderboard_groupme(request, tournament_id: int):
+        """Send current leaderboard standings to GroupMe."""
+        db = get_db()
+        user = get_current_user(request)
+        if not user or not user.is_admin:
+            return RedirectResponse("/leaderboard", status_code=303)
+
+        try:
+            from services.groupme import GroupMeClient
+
+            # Get tournament
+            tournament = None
+            for t in db.tournaments():
+                if t.id == tournament_id:
+                    tournament = t
+                    break
+
+            if not tournament:
+                return RedirectResponse("/leaderboard", status_code=303)
+
+            # Get standings
+            all_picks = [p for p in db.picks() if p.tournament_id == tournament_id]
+            standings = [s for s in db.pickem_standings() if s.tournament_id == tournament_id]
+            standings.sort(key=lambda s: s.rank if s.rank else 999)
+
+            users_by_id = {u.id: u for u in db.users()}
+
+            # Build message
+            from routes.utils import calculate_tournament_purse
+            purse = calculate_tournament_purse(tournament, all_picks)
+
+            message_lines = [f"🏌️ {tournament.name} - Top 10"]
+            if purse:
+                message_lines.append(f"💰 Purse: ${purse}")
+            message_lines.append("")
+
+            # Add top 10 standings
+            for i, standing in enumerate(standings[:10]):
+                if i >= 10:
+                    break
+                user = users_by_id.get(standing.user_id)
+                player_name = user.display_name if user else f"User {standing.user_id}"
+                rank = standing.rank if standing.rank else (i + 1)
+                score = standing.best_two_total if standing.best_two_total is not None else "DQ"
+
+                # Format score
+                from routes.utils import format_score
+                score_str = format_score(score) if isinstance(score, int) else str(score)
+
+                message_lines.append(f"{rank}. {player_name} - {score_str}")
+
+            message = "\n".join(message_lines)
+
+            # Send message (GroupMeClient will check app_settings and env var for bot_id)
+            client = GroupMeClient(db_module=db)
+            client.send_message(message)
+
+        except Exception as e:
+            logger.error(f"Failed to send leaderboard to GroupMe: {e}", exc_info=True)
 
         return RedirectResponse(f"/leaderboard?tournament_id={tournament_id}", status_code=303)
 

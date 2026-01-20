@@ -68,3 +68,19 @@ def get_active_tournament():
     """Get the currently active tournament, if any."""
     tournaments = [t for t in _db_module.tournaments() if t.status == 'active']
     return tournaments[0] if tournaments else None
+
+
+def calculate_tournament_purse(tournament, picks):
+    """Calculate total purse for a tournament based on entries and entry price.
+
+    Args:
+        tournament: Tournament object with entry_price field
+        picks: List of pick entries for the tournament
+
+    Returns:
+        Total purse as int, or None if no pricing set
+    """
+    if not tournament.entry_price or tournament.entry_price <= 0:
+        return None
+    entry_count = len(picks)
+    return entry_count * tournament.entry_price

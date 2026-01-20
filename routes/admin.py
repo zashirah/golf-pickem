@@ -11,6 +11,23 @@ from routes.utils import get_current_user, get_db, get_auth_service
 logger = logging.getLogger(__name__)
 
 
+def _get_groupme_bot_id(db_module) -> str:
+    """Get GroupMe bot ID from app_settings."""
+    for setting in db_module.app_settings():
+        if setting.key == 'groupme_bot_id':
+            return setting.value
+    return None
+
+
+def _mask_bot_id(bot_id: str) -> str:
+    """Mask bot ID for display, showing only first and last 4 chars."""
+    if not bot_id:
+        return ""
+    if len(bot_id) <= 8:
+        return "****"
+    return f"{bot_id[:4]}...{bot_id[-4:]}"
+
+
 def _normalize_tournament_name(name: str) -> str:
     """Normalize tournament name for comparison."""
     if not name:
@@ -46,7 +63,7 @@ def setup_admin_routes(app):
     """Register admin routes."""
 
     @app.get("/admin")
-    def admin_page(request, error: str = None):
+    def admin_page(request, error: str = None, success: str = None):
         db = get_db()
         auth_service = get_auth_service()
         user = get_current_user(request)
@@ -64,15 +81,17 @@ def setup_admin_routes(app):
         tournaments = list(db.tournaments())
         users = list(db.users())
 
-        # Import alert for error display
+        # Import alert for message display
         from components.layout import alert
         error_msg = alert(error, "error") if error else None
+        success_msg = alert(success, "success") if success else None
 
         return page_shell(
             "Admin",
             Div(
                 H1("Admin Dashboard"),
                 error_msg,
+                success_msg,
 
                 card(
                     "Invite Link",
@@ -93,7 +112,7 @@ def setup_admin_routes(app):
                 card(
                     "Tournaments",
                     Table(
-                        Thead(Tr(Th("Name"), Th("Status"), Th("Picks"), Th("Actions"))),
+                        Thead(Tr(Th("Name"), Th("Status"), Th("Picks"), Th("Pricing"), Th("Actions"))),
                         Tbody(*[Tr(
                             Td(t.name),
                             Td(
@@ -104,7 +123,13 @@ def setup_admin_routes(app):
                                 Span("Locked", cls="badge badge-locked") if t.picks_locked else Span("Open", cls="badge badge-open")
                             ),
                             Td(
+                                f"${t.entry_price}" if t.entry_price else "-",
+                                " | " if t.entry_price and t.three_entry_price else None,
+                                f"3-pack: ${t.three_entry_price}" if t.three_entry_price else None
+                            ),
+                            Td(
                                 A("Field", href=f"/admin/tournament/{t.id}/field", cls="btn btn-sm"),
+                                A("Pricing", href=f"/admin/tournament/{t.id}/pricing", cls="btn btn-sm"),
                                 Form(
                                     Button("Unlock" if t.picks_locked else "Lock", type="submit", cls="btn btn-sm"),
                                     Input(type="hidden", name="tournament_id", value=str(t.id)),
@@ -149,14 +174,57 @@ def setup_admin_routes(app):
                 card(
                     "Users",
                     Table(
-                        Thead(Tr(Th("Username"), Th("Display Name"), Th("Admin"))),
+                        Thead(Tr(Th("GroupMe Name"), Th("Admin"), Th("Actions"))),
                         Tbody(*[Tr(
-                            Td(u.username),
-                            Td(u.display_name or "-"),
-                            Td("Yes" if u.is_admin else "No")
+                            Td(u.groupme_name or u.username or "-"),
+                            Td("Yes" if u.is_admin else "No"),
+                            Td(
+                                Form(
+                                    Input(type="hidden", name="user_id", value=str(u.id)),
+                                    Button("Delete", type="submit", cls="btn btn-sm btn-danger",
+                                           onclick="return confirm('Are you sure you want to delete this user? This will also delete all their picks and standings.');"),
+                                    action="/admin/delete-user",
+                                    method="post",
+                                    style="display:inline"
+                                ) if not u.is_admin else None,
+                            )
                         ) for u in users]),
                         cls="admin-table"
                     ),
+                ),
+
+                card(
+                    "GroupMe Settings",
+                    Div(
+                        P("Configure GroupMe bot for notifications."),
+                        P(
+                            Strong("Current Bot ID: "),
+                            Code(_mask_bot_id(_get_groupme_bot_id(db))) if _get_groupme_bot_id(db) else "Not configured"
+                        ),
+                        Form(
+                            Div(
+                                Label("New Bot ID", For="bot_id"),
+                                Input(
+                                    type="text",
+                                    id="bot_id",
+                                    name="bot_id",
+                                    placeholder="Enter new bot ID to update",
+                                ),
+                                cls="form-group"
+                            ),
+                            Button("Save Bot ID", type="submit", cls="btn btn-primary"),
+                            action="/admin/groupme/set-bot-id",
+                            method="post",
+                            style="display:inline; margin-right:10px;"
+                        ),
+                        Form(
+                            Button("Send Test Message", type="submit", cls="btn btn-secondary"),
+                            action="/admin/groupme/test",
+                            method="post",
+                            style="display:inline;"
+                        ) if _get_groupme_bot_id(db) else None,
+                        cls="groupme-settings"
+                    )
                 ),
 
                 cls="admin-page"
@@ -173,6 +241,53 @@ def setup_admin_routes(app):
 
         auth_service.reset_invite_secret()
         return RedirectResponse("/admin", status_code=303)
+
+    @app.post("/admin/delete-user")
+    def delete_user(request, user_id: int):
+        """Delete a user and all their associated data."""
+        db = get_db()
+        user = get_current_user(request)
+        if not user or not user.is_admin:
+            return RedirectResponse("/", status_code=303)
+
+        try:
+            # Get the user to delete
+            users_to_delete = [u for u in db.users() if u.id == user_id]
+            if not users_to_delete:
+                return RedirectResponse("/admin?error=User not found", status_code=303)
+
+            user_to_delete = users_to_delete[0]
+
+            # Prevent deleting admin users
+            if user_to_delete.is_admin:
+                return RedirectResponse("/admin?error=Cannot delete admin users", status_code=303)
+
+            # Delete associated data
+            # Delete picks
+            picks_to_delete = [p for p in db.picks() if p.user_id == user_id]
+            for pick in picks_to_delete:
+                db.picks.delete(pick.id)
+
+            # Delete standings
+            standings_to_delete = [s for s in db.pickem_standings() if s.user_id == user_id]
+            for standing in standings_to_delete:
+                db.pickem_standings.delete(standing.id)
+
+            # Delete sessions
+            sessions_to_delete = [s for s in db.sessions() if s.user_id == user_id]
+            for session in sessions_to_delete:
+                db.sessions.delete(session.id)
+
+            # Finally delete the user
+            db.users.delete(user_id)
+
+            logger.info(f"Admin {user.groupme_name} deleted user {user_to_delete.groupme_name} (id={user_id})")
+            return RedirectResponse("/admin?success=User deleted successfully", status_code=303)
+
+        except Exception as e:
+            logger.error(f"Failed to delete user {user_id}: {e}", exc_info=True)
+            return RedirectResponse("/admin?error=Failed to delete user", status_code=303)
+
 
     @app.post("/admin/update-statuses")
     def update_tournament_statuses(request):
@@ -222,6 +337,8 @@ def setup_admin_routes(app):
                         if tournament.status != 'completed':
                             logger.info(f"Setting {tournament.name} to completed (round {current_round})")
                             db_module.tournaments.update(id=tournament.id, status='completed')
+                            # Auto-send final leaderboard to GroupMe
+                            _send_final_leaderboard_groupme(db_module, tournament.id)
                     
                     # Lock picks at first tee time (when tournament becomes active and it's tournament day)
                     if tournament.status == 'active' and not tournament.picks_locked:
@@ -865,3 +982,236 @@ def setup_admin_routes(app):
             logger.error(f"Auto-assign error: {e}", exc_info=True)
 
         return RedirectResponse(f"/admin/tournament/{tid}/field", status_code=303)
+
+    @app.get("/admin/tournament/{tid}/pricing")
+    def tournament_pricing_page(request, tid: int, error: str = None, success: str = None):
+        """Edit tournament entry pricing."""
+        db = get_db()
+        user = get_current_user(request)
+        if not user or not user.is_admin:
+            return RedirectResponse("/", status_code=303)
+
+        tournament = None
+        for t in db.tournaments():
+            if t.id == tid:
+                tournament = t
+                break
+
+        if not tournament:
+            return RedirectResponse("/admin", status_code=303)
+
+        # Get entry count for this tournament
+        picks = list(db.picks())
+        entries_for_tournament = [p for p in picks if p.tournament_id == tid]
+        entry_count = len(entries_for_tournament)
+
+        entry_price = tournament.entry_price or 0
+        three_entry_price = tournament.three_entry_price or 0
+        total_purse = entry_count * entry_price if entry_price > 0 else 0
+
+        # Import alert for messages
+        from components.layout import alert
+        error_msg = alert(error, "error") if error else None
+        success_msg = alert(success, "success") if success else None
+
+        return page_shell(
+            "Tournament Pricing",
+            Div(
+                H1(f"Pricing: {tournament.name}"),
+                error_msg,
+                success_msg,
+                card(
+                    "Entry Pricing",
+                    Form(
+                        Div(
+                            Label("Single Entry Price ($)", For="entry_price"),
+                            Input(
+                                type="number",
+                                id="entry_price",
+                                name="entry_price",
+                                value=str(entry_price) if entry_price else "",
+                                placeholder="e.g., 50",
+                                min="0",
+                                step="1"
+                            ),
+                            cls="form-group"
+                        ),
+                        Div(
+                            Label("3-Entry Package Price ($)", For="three_entry_price"),
+                            Input(
+                                type="number",
+                                id="three_entry_price",
+                                name="three_entry_price",
+                                value=str(three_entry_price) if three_entry_price else "",
+                                placeholder="e.g., 120",
+                                min="0",
+                                step="1"
+                            ),
+                            cls="form-group"
+                        ),
+                        Button("Save Pricing", type="submit", cls="btn btn-primary"),
+                        action=f"/admin/tournament/{tid}/pricing",
+                        method="post"
+                    )
+                ),
+                card(
+                    "Purse Summary",
+                    Div(
+                        P(Strong(f"Total Entries: "), f"{entry_count}"),
+                        P(Strong(f"Price per Entry: "), f"${entry_price}" if entry_price > 0 else "Not set"),
+                        P(Strong(f"Total Purse: "), f"${total_purse}" if entry_price > 0 else "No pricing set"),
+                        cls="purse-info"
+                    )
+                ),
+                A("← Back to Admin", href="/admin", cls="btn btn-secondary", style="margin-top: 20px;"),
+                cls="pricing-page"
+            ),
+            user=user
+        )
+
+    @app.post("/admin/tournament/{tid}/pricing")
+    def update_tournament_pricing(request, tid: int, entry_price: int = None, three_entry_price: int = None):
+        """Update tournament pricing."""
+        db = get_db()
+        user = get_current_user(request)
+        if not user or not user.is_admin:
+            return RedirectResponse("/", status_code=303)
+
+        # Find tournament
+        tournament = None
+        for t in db.tournaments():
+            if t.id == tid:
+                tournament = t
+                break
+
+        if not tournament:
+            return RedirectResponse("/admin", status_code=303)
+
+        # Validate pricing (must be positive or empty/zero to clear)
+        if entry_price is not None and entry_price < 0:
+            return RedirectResponse(f"/admin/tournament/{tid}/pricing?error=Entry price must be positive", status_code=303)
+        if three_entry_price is not None and three_entry_price < 0:
+            return RedirectResponse(f"/admin/tournament/{tid}/pricing?error=3-entry price must be positive", status_code=303)
+
+        # Update pricing fields (0 or empty clears the price)
+        update_data = {}
+        if entry_price is not None:
+            update_data['entry_price'] = int(entry_price) if entry_price > 0 else None
+        if three_entry_price is not None:
+            update_data['three_entry_price'] = int(three_entry_price) if three_entry_price > 0 else None
+
+        if update_data:
+            db.tournaments.update(id=tid, **update_data)
+            logger.info(f"Updated pricing for tournament {tid}: {update_data}")
+            return RedirectResponse(f"/admin/tournament/{tid}/pricing?success=Pricing updated", status_code=303)
+
+        return RedirectResponse(f"/admin/tournament/{tid}/pricing", status_code=303)
+
+    @app.post("/admin/groupme/set-bot-id")
+    def set_groupme_bot_id(request, bot_id: str = None):
+        """Update GroupMe bot ID."""
+        db = get_db()
+        user = get_current_user(request)
+        if not user or not user.is_admin:
+            return RedirectResponse("/admin", status_code=303)
+
+        if bot_id and bot_id.strip():
+            bot_id = bot_id.strip()
+            # Find existing setting or create new one
+            settings = list(db.app_settings())
+            existing = [s for s in settings if s.key == 'groupme_bot_id']
+
+            if existing:
+                db.app_settings.update(id=existing[0].id, value=bot_id)
+            else:
+                db.app_settings.insert(key='groupme_bot_id', value=bot_id)
+
+            logger.info(f"Updated GroupMe bot_id (length: {len(bot_id)})")
+            return RedirectResponse("/admin?success=GroupMe bot ID saved", status_code=303)
+
+        return RedirectResponse("/admin?error=Bot ID cannot be empty", status_code=303)
+
+    @app.post("/admin/groupme/test")
+    def test_groupme_message(request):
+        """Send test message to GroupMe."""
+        db = get_db()
+        user = get_current_user(request)
+        if not user or not user.is_admin:
+            return RedirectResponse("/admin", status_code=303)
+
+        try:
+            from services.groupme import GroupMeClient
+
+            client = GroupMeClient(db_module=db)
+            if not client.bot_id:
+                return RedirectResponse("/admin?error=No GroupMe bot ID configured", status_code=303)
+
+            message = "🏌️ Test message from Golf Pick'em Admin"
+            success = client.send_message(message)
+
+            if success:
+                logger.info("Test GroupMe message sent successfully")
+                return RedirectResponse("/admin?success=Test message sent to GroupMe", status_code=303)
+            else:
+                logger.warning("Test GroupMe message failed to send")
+                return RedirectResponse("/admin?error=Failed to send test message", status_code=303)
+
+        except Exception as e:
+            logger.error(f"Failed to send test GroupMe message: {e}", exc_info=True)
+            return RedirectResponse("/admin?error=Error sending test message", status_code=303)
+
+
+def _send_final_leaderboard_groupme(db_module, tournament_id):
+    """Send final leaderboard to GroupMe when tournament completes."""
+    try:
+        from services.groupme import GroupMeClient
+        from routes.utils import calculate_tournament_purse, format_score
+
+        # Get tournament
+        tournament = None
+        for t in db_module.tournaments():
+            if t.id == tournament_id:
+                tournament = t
+                break
+
+        if not tournament:
+            return
+
+        # Get standings
+        all_picks = [p for p in db_module.picks() if p.tournament_id == tournament_id]
+        standings = [s for s in db_module.pickem_standings() if s.tournament_id == tournament_id]
+        standings.sort(key=lambda s: s.rank if s.rank else 999)
+
+        users_by_id = {u.id: u for u in db_module.users()}
+
+        # Build message
+        purse = calculate_tournament_purse(tournament, all_picks)
+
+        message_lines = [f"🏁 FINAL LEADERBOARD: {tournament.name}"]
+        if purse:
+            message_lines.append(f"💰 Purse: ${purse}")
+        message_lines.append("")
+
+        # Add top 10 standings
+        for i, standing in enumerate(standings[:10]):
+            if i >= 10:
+                break
+            user = users_by_id.get(standing.user_id)
+            player_name = user.display_name if user else f"User {standing.user_id}"
+            rank = standing.rank if standing.rank else (i + 1)
+            score = standing.best_two_total if standing.best_two_total is not None else "DQ"
+
+            # Format score
+            score_str = format_score(score) if isinstance(score, int) else str(score)
+
+            message_lines.append(f"{rank}. {player_name} - {score_str}")
+
+        message = "\n".join(message_lines)
+
+        # Send message (GroupMeClient will check app_settings and env var for bot_id)
+        client = GroupMeClient(db_module=db_module)
+        client.send_message(message)
+        logger.info(f"Sent final leaderboard for {tournament.name} to GroupMe")
+
+    except Exception as e:
+        logger.error(f"Failed to send final leaderboard to GroupMe: {e}", exc_info=True)

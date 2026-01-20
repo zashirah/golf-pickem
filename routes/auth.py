@@ -17,8 +17,8 @@ def setup_auth_routes(app, auth_service):
             Form(
                 alert(error, "error") if error else None,
                 Div(
-                    Label("Username", fr="username"),
-                    Input(type="text", name="username", id="username", required=True),
+                    Label("GroupMe Name", fr="groupme_name"),
+                    Input(type="text", name="groupme_name", id="groupme_name", required=True),
                     cls="form-group"
                 ),
                 Div(
@@ -36,8 +36,8 @@ def setup_auth_routes(app, auth_service):
         return page_shell("Login", content)
 
     @app.post("/login")
-    def login_submit(request, username: str, password: str):
-        token, error = auth_service.login(username, password)
+    def login_submit(request, groupme_name: str, password: str):
+        token, error = auth_service.login(groupme_name, password)
 
         if error:
             return RedirectResponse(f"/login?error={error}", status_code=303)
@@ -65,18 +65,18 @@ def setup_auth_routes(app, auth_service):
 
         content = card(
             "Create Account",
+            Div(
+                P(Strong("Important: "), "Your GroupMe name must match your display name in the GroupMe group exactly (including capitalization and spacing). This is required for registration verification.", style="color: #d32f2f; margin-bottom: 1rem;"),
+                cls="registration-notice"
+            ),
             Form(
                 alert(error, "error") if error else None,
                 Input(type="hidden", name="invite", value=invite),
                 Div(
-                    Label("Username", fr="username"),
-                    Input(type="text", name="username", id="username", required=True),
-                    cls="form-group"
-                ),
-                Div(
-                    Label("Display Name", fr="display_name"),
-                    Input(type="text", name="display_name", id="display_name",
-                          placeholder="How your name appears on leaderboard"),
+                    Label("GroupMe Name", fr="groupme_name"),
+                    Input(type="text", name="groupme_name", id="groupme_name", required=True,
+                          placeholder="Exactly as shown in GroupMe"),
+                    Small("This is how your name will appear and how you'll log in. Must match your GroupMe display name exactly.", style="color: #666;"),
                     cls="form-group"
                 ),
                 Div(
@@ -99,7 +99,7 @@ def setup_auth_routes(app, auth_service):
         return page_shell("Register", content)
 
     @app.post("/register")
-    def register_submit(request, invite: str, username: str, password: str, password2: str, display_name: str = None):
+    def register_submit(request, invite: str, groupme_name: str, password: str, password2: str):
         if not auth_service.validate_invite(invite):
             return RedirectResponse("/register", status_code=303)
 
@@ -109,13 +109,26 @@ def setup_auth_routes(app, auth_service):
         if len(password) < 6:
             return RedirectResponse(f"/register?invite={invite}&error=Password must be at least 6 characters", status_code=303)
 
-        user, error = auth_service.register_user(username, password, display_name)
+        if not groupme_name or not groupme_name.strip():
+            return RedirectResponse(f"/register?invite={invite}&error=GroupMe name is required", status_code=303)
+
+        # Verify GroupMe membership
+        from services.groupme import GroupMeClient
+        from config import GROUPME_ACCESS_TOKEN, GROUPME_GROUP_ID
+
+        if GROUPME_ACCESS_TOKEN and GROUPME_GROUP_ID:
+            client = GroupMeClient()
+            is_member = client.verify_member(groupme_name, GROUPME_GROUP_ID, GROUPME_ACCESS_TOKEN)
+            if not is_member:
+                return RedirectResponse(f"/register?invite={invite}&error=GroupMe name not found in group. Please check spelling.", status_code=303)
+
+        user, error = auth_service.register_user(groupme_name, password)
 
         if error:
             return RedirectResponse(f"/register?invite={invite}&error={error}", status_code=303)
 
         # Auto-login after registration
-        token, _ = auth_service.login(username, password)
+        token, _ = auth_service.login(groupme_name, password)
         response = RedirectResponse("/", status_code=303)
         response.set_cookie("session", token, max_age=60*60*24*30, httponly=True)
         return response
