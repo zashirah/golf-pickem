@@ -576,19 +576,15 @@ def setup_leaderboard_routes(app):
                 style="margin-right: 1.5rem;"
             ))
         if tournament.entry_price:
-            price_cents = tournament.entry_price
-            price_dollars = price_cents / 100
             pricing_info.append(Div(
                 Strong("Entry: "),
-                Span(f"${price_dollars:.0f}", style="color: #666;"),
+                Span(f"${tournament.entry_price:.0f}", style="color: #666;"),
                 style="margin-right: 1rem;"
             ))
         if tournament.three_entry_price:
-            three_price_cents = tournament.three_entry_price
-            three_price_dollars = three_price_cents / 100
             pricing_info.append(Div(
                 Strong("3-Pack: "),
-                Span(f"${three_price_dollars:.0f}", style="color: #666;")
+                Span(f"${tournament.three_entry_price:.0f}", style="color: #666;")
             ))
         
         purse_display = Div(

@@ -74,11 +74,11 @@ def calculate_tournament_purse(tournament, picks):
     """Calculate total purse for a tournament based on entries and entry price.
 
     Args:
-        tournament: Tournament object with entry_price field
+        tournament: Tournament object with entry_price field (in dollars)
         picks: List of pick entries for the tournament
 
     Returns:
-        Total purse as int, or None if no pricing set
+        Total purse in dollars as int, or None if no pricing set
     """
     if not tournament.entry_price or tournament.entry_price <= 0:
         return None
