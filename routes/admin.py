@@ -11,6 +11,14 @@ from routes.utils import get_current_user, get_db, get_auth_service
 logger = logging.getLogger(__name__)
 
 
+def _get_groupme_bot_id(db_module) -> str:
+    """Get GroupMe bot ID from app_settings."""
+    for setting in db_module.app_settings():
+        if setting.key == 'groupme_bot_id':
+            return setting.value
+    return None
+
+
 def _normalize_tournament_name(name: str) -> str:
     """Normalize tournament name for comparison."""
     if not name:
@@ -163,6 +171,37 @@ def setup_admin_routes(app):
                         ) for u in users]),
                         cls="admin-table"
                     ),
+                ),
+
+                card(
+                    "GroupMe Settings",
+                    Div(
+                        P("Configure GroupMe bot for notifications."),
+                        Form(
+                            Div(
+                                Label("Bot ID", For="bot_id"),
+                                Input(
+                                    type="text",
+                                    id="bot_id",
+                                    name="bot_id",
+                                    placeholder="Your GroupMe bot ID",
+                                    value=_get_groupme_bot_id(db) or "",
+                                ),
+                                cls="form-group"
+                            ),
+                            Button("Save Bot ID", type="submit", cls="btn btn-primary"),
+                            action="/admin/groupme/set-bot-id",
+                            method="post",
+                            style="display:inline; margin-right:10px;"
+                        ),
+                        Form(
+                            Button("Send Test Message", type="submit", cls="btn btn-secondary"),
+                            action="/admin/groupme/test",
+                            method="post",
+                            style="display:inline;"
+                        ),
+                        cls="groupme-settings"
+                    )
                 ),
 
                 cls="admin-page"
@@ -983,6 +1022,57 @@ def setup_admin_routes(app):
             logger.info(f"Updated pricing for tournament {tid}: {update_data}")
 
         return RedirectResponse(f"/admin/tournament/{tid}/pricing", status_code=303)
+
+    @app.post("/admin/groupme/set-bot-id")
+    def set_groupme_bot_id(request, bot_id: str = None):
+        """Update GroupMe bot ID."""
+        db = get_db()
+        user = get_current_user(request)
+        if not user or not user.is_admin:
+            return RedirectResponse("/admin", status_code=303)
+
+        if bot_id:
+            # Find existing setting or create new one
+            settings = list(db.app_settings())
+            existing = [s for s in settings if s.key == 'groupme_bot_id']
+
+            if existing:
+                db.app_settings.update(id=existing[0].id, value=bot_id)
+            else:
+                db.app_settings.insert(key='groupme_bot_id', value=bot_id)
+
+            logger.info(f"Updated GroupMe bot_id (length: {len(bot_id)})")
+
+        return RedirectResponse("/admin", status_code=303)
+
+    @app.post("/admin/groupme/test")
+    def test_groupme_message(request):
+        """Send test message to GroupMe."""
+        db = get_db()
+        user = get_current_user(request)
+        if not user or not user.is_admin:
+            return RedirectResponse("/admin", status_code=303)
+
+        try:
+            from services.groupme import GroupMeClient
+
+            bot_id = _get_groupme_bot_id(db)
+            if not bot_id:
+                return RedirectResponse("/admin?error=No GroupMe bot ID configured", status_code=303)
+
+            client = GroupMeClient(bot_id)
+            message = "🏌️ Test message from Golf Pick'em Admin"
+            success = client.send_message(message)
+
+            if success:
+                logger.info("Test GroupMe message sent successfully")
+            else:
+                logger.warning("Test GroupMe message failed to send")
+
+        except Exception as e:
+            logger.error(f"Failed to send test GroupMe message: {e}", exc_info=True)
+
+        return RedirectResponse("/admin", status_code=303)
 
 
 def _send_final_leaderboard_groupme(db_module, tournament_id):
