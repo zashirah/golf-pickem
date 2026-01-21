@@ -26,6 +26,7 @@ from routes import (
     setup_leaderboard_routes,
     setup_admin_routes,
 )
+from routes.season_leaderboard import setup_season_leaderboard_routes
 
 # Initialize database
 tables = init_db()
@@ -47,6 +48,7 @@ setup_auth_routes(app, auth_service)
 setup_home_routes(app)
 setup_picks_routes(app)
 setup_leaderboard_routes(app)
+setup_season_leaderboard_routes(app)
 setup_admin_routes(app)
 
 

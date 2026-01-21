@@ -103,7 +103,7 @@ pickem_standings = None
 
 def init_db():
     """Initialize all database tables."""
-    from db.models import create_tables
+    from db.models import create_tables, create_season_standings_view
     global users, sessions, app_settings, tournaments, golfers
     global tournament_field, picks, tournament_results, pickem_standings
 
@@ -117,5 +117,8 @@ def init_db():
     picks = tables['picks']
     tournament_results = tables['tournament_results']
     pickem_standings = tables['pickem_standings']
+
+    # Create season standings view after tables are created
+    create_season_standings_view(db)
 
     return tables

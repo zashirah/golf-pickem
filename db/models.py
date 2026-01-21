@@ -178,3 +178,69 @@ def create_tables(db):
         'tournament_results': tournament_results,
         'pickem_standings': pickem_standings
     }
+
+
+def create_season_standings_view(db):
+    """Create or replace the season_standings_view for aggregating season-long stats.
+
+    This VIEW dynamically aggregates user performance across all tournaments in a calendar year,
+    tracking total score, wins, top finishes, average position, and total winnings.
+    """
+    import sqlalchemy as sa
+
+    # Determine database type from connection string
+    is_postgres = hasattr(db, 'conn_str') and db.conn_str.startswith('postgresql')
+
+    # Use appropriate date extraction function
+    year_expr = "EXTRACT(YEAR FROM t.start_date)::text" if is_postgres else "strftime('%Y', t.start_date)"
+
+    # Drop existing view if it exists (for idempotency)
+    drop_sql = "DROP VIEW IF EXISTS season_standings_view;"
+
+    # Create VIEW with dynamic aggregation
+    create_sql = f"""
+CREATE VIEW season_standings_view AS
+SELECT
+    {year_expr} as season_year,
+    u.id as user_id,
+    u.display_name,
+
+    -- Core stats
+    COUNT(DISTINCT ps.tournament_id) as tournaments_played,
+    COUNT(ps.id) as total_entries,
+    SUM(CASE WHEN ps.best_two_total IS NOT NULL THEN ps.best_two_total ELSE 0 END) as total_score,
+
+    -- Finish counts
+    SUM(CASE WHEN ps.rank = 1 THEN 1 ELSE 0 END) as wins,
+    SUM(CASE WHEN ps.rank <= 3 THEN 1 ELSE 0 END) as top3_finishes,
+    SUM(CASE WHEN ps.rank <= 5 THEN 1 ELSE 0 END) as top5_finishes,
+    SUM(CASE WHEN ps.rank <= 10 THEN 1 ELSE 0 END) as top10_finishes,
+
+    -- Performance metrics
+    AVG(CAST(ps.rank AS {'DECIMAL' if is_postgres else 'FLOAT'})) as average_position,
+    MIN(ps.rank) as best_finish,
+
+    -- Winnings (sum of purses for tournaments won)
+    SUM(
+        CASE WHEN ps.rank = 1 AND t.entry_price IS NOT NULL
+        THEN t.entry_price * (SELECT COUNT(*) FROM picks WHERE tournament_id = t.id)
+        ELSE 0 END
+    ) as total_winnings
+
+FROM users u
+JOIN pickem_standings ps ON u.id = ps.user_id
+JOIN tournaments t ON ps.tournament_id = t.id
+WHERE t.status = 'completed'
+  AND ps.best_two_total IS NOT NULL
+GROUP BY season_year, u.id, u.display_name
+ORDER BY total_score ASC;
+"""
+
+    try:
+        # Execute drop and create using SQLAlchemy text()
+        db.conn.execute(sa.text(drop_sql))
+        db.conn.execute(sa.text(create_sql))
+        print("Created season_standings_view successfully")
+    except Exception as e:
+        print(f"Error creating season_standings_view: {e}")
+        raise

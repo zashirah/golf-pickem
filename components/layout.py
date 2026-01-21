@@ -17,6 +17,7 @@ def nav_header(user=None):
         nav_items = [
             A("Picks", href="/picks", cls="nav-link"),
             A("Leaderboard", href="/leaderboard", cls="nav-link"),
+            A("Season", href="/season-leaderboard", cls="nav-link"),
             A("About", href="/about", cls="nav-link"),
         ]
         if user.is_admin:
