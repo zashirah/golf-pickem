@@ -12,7 +12,9 @@ logger = logging.getLogger(__name__)
 
 
 def get_season_standings(db, season_year=None):
-    """Query season standings view for a specific year or all years.
+    """Query season standings for a specific year or all years.
+
+    Computes season aggregates (total score, wins, top finishes, etc.) from raw tournament data.
 
     Args:
         db: Database module
@@ -23,17 +25,41 @@ def get_season_standings(db, season_year=None):
     """
     import sqlalchemy as sa
 
-    query = "SELECT * FROM season_standings_view"
-    params = {}
+    # Build the query dynamically - compute aggregates on the fly without a VIEW
+    query = """
+    WITH standings AS (
+        SELECT
+            EXTRACT(YEAR FROM t.start_date::date)::text as season_year,
+            u.id as user_id,
+            u.display_name,
+            COUNT(DISTINCT ps.tournament_id) as tournaments_played,
+            COUNT(ps.id) as total_entries,
+            SUM(CASE WHEN ps.best_two_total IS NOT NULL THEN ps.best_two_total ELSE 0 END) as total_score,
+            AVG(CASE WHEN ps.best_two_total IS NOT NULL THEN ps.best_two_total ELSE NULL END) as average_score,
+            SUM(CASE WHEN ps.rank = 1 THEN 1 ELSE 0 END) as wins,
+            SUM(CASE WHEN ps.rank <= 3 THEN 1 ELSE 0 END) as top3_finishes,
+            SUM(CASE WHEN ps.rank <= 5 THEN 1 ELSE 0 END) as top5_finishes,
+            SUM(CASE WHEN ps.rank <= 10 THEN 1 ELSE 0 END) as top10_finishes,
+            AVG(CAST(ps.rank AS DECIMAL)) as average_position,
+            MIN(ps.rank) as best_finish,
+            0::DECIMAL as total_winnings
+        FROM "user" u
+        JOIN pickem_standing ps ON u.id = ps.user_id
+        JOIN tournament t ON ps.tournament_id = t.id
+        WHERE t.status = 'completed'
+          AND ps.best_two_total IS NOT NULL
+        GROUP BY EXTRACT(YEAR FROM t.start_date::date), u.id, u.display_name
+    )
+    SELECT * FROM standings
+    """
 
     if season_year:
-        query += " WHERE season_year = :year"
-        params['year'] = str(season_year)
+        query += f" WHERE season_year = '{season_year}'"
 
-    query += " ORDER BY average_score ASC"  # Lowest average score wins
+    query += " ORDER BY average_score ASC"
 
     try:
-        result = list(db.db.conn.execute(sa.text(query), params))
+        result = list(db.db.conn.execute(sa.text(query)))
         return result
     except Exception as e:
         logger.error(f"Error querying season standings: {e}", exc_info=True)
@@ -48,9 +74,14 @@ def get_available_years(db):
     """
     import sqlalchemy as sa
 
+    query = """
+    SELECT DISTINCT EXTRACT(YEAR FROM t.start_date::date)::text as season_year
+    FROM tournament t
+    WHERE t.status = 'completed'
+    ORDER BY season_year DESC
+    """
+
     try:
-        # Query for distinct years from the view
-        query = "SELECT DISTINCT season_year FROM season_standings_view ORDER BY season_year DESC"
         result = list(db.db.conn.execute(sa.text(query)))
         return [row[0] for row in result if row[0]]
     except Exception as e:
