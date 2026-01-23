@@ -238,8 +238,8 @@ JOIN pickem_standing ps ON u.id = ps.user_id
 JOIN tournament t ON ps.tournament_id = t.id
 WHERE t.status = 'completed'
   AND ps.best_two_total IS NOT NULL
-GROUP BY season_year, u.id, u.display_name
-ORDER BY average_score ASC;
+GROUP BY {year_expr}, u.id, u.display_name
+ORDER BY AVG(CASE WHEN ps.best_two_total IS NOT NULL THEN ps.best_two_total ELSE NULL END) ASC;
 """
 
     try:
