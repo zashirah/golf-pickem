@@ -21,6 +21,8 @@ def get_season_standings(db, season_year=None):
     Returns:
         List of season standing records
     """
+    import sqlalchemy as sa
+
     query = "SELECT * FROM season_standings_view"
     params = {}
 
@@ -28,10 +30,10 @@ def get_season_standings(db, season_year=None):
         query += " WHERE season_year = :year"
         params['year'] = str(season_year)
 
-    query += " ORDER BY total_score ASC"  # Lowest score wins
+    query += " ORDER BY average_score ASC"  # Lowest average score wins
 
     try:
-        result = list(db.conn.execute(query, params))
+        result = list(db.db.conn.execute(sa.text(query), params))
         return result
     except Exception as e:
         logger.error(f"Error querying season standings: {e}", exc_info=True)
@@ -44,10 +46,12 @@ def get_available_years(db):
     Returns:
         List of year strings in descending order (most recent first)
     """
+    import sqlalchemy as sa
+
     try:
         # Query for distinct years from the view
         query = "SELECT DISTINCT season_year FROM season_standings_view ORDER BY season_year DESC"
-        result = list(db.conn.execute(query))
+        result = list(db.db.conn.execute(sa.text(query)))
         return [row[0] for row in result if row[0]]
     except Exception as e:
         logger.error(f"Error getting available years: {e}", exc_info=True)
@@ -91,21 +95,25 @@ def setup_season_leaderboard_routes(app):
         current_rank = 1
         prev_score = None
         for i, standing in enumerate(standings):
-            # If score is different from previous, update rank
-            if prev_score is None or standing['total_score'] != prev_score:
+            # Convert row to dict
+            standing_dict = dict(standing._mapping) if hasattr(standing, '_mapping') else dict(standing)
+
+            # If average score is different from previous, update rank
+            if prev_score is None or standing_dict['average_score'] != prev_score:
                 current_rank = i + 1
 
             ranked_standings.append({
                 'rank': current_rank,
-                **dict(standing)
+                **standing_dict
             })
-            prev_score = standing['total_score']
+            prev_score = standing_dict['average_score']
 
         # Count tournaments for this year
-        tournaments = list(db.conn.execute(
-            """SELECT COUNT(*) as count FROM tournaments
+        import sqlalchemy as sa
+        tournaments = list(db.db.conn.execute(
+            sa.text("""SELECT COUNT(*) as count FROM tournament
                WHERE status = 'completed'
-               AND (strftime('%Y', start_date) = :year OR EXTRACT(YEAR FROM start_date)::text = :year)""",
+               AND strftime('%Y', start_date) = :year"""),
             {'year': year}
         ))
         tournament_count = tournaments[0][0] if tournaments else 0
@@ -134,8 +142,8 @@ def setup_season_leaderboard_routes(app):
         # Build leaderboard rows
         def standing_row(s):
             """Create a table row for a season standing."""
-            # Format scores
-            total_score = format_score(s['total_score']) if s['total_score'] is not None else "-"
+            # Format average score
+            avg_score = format_score(int(s['average_score'])) if s['average_score'] is not None else "-"
             avg_pos = f"{s['average_position']:.1f}" if s['average_position'] is not None else "-"
             best_finish = str(s['best_finish']) if s['best_finish'] is not None else "-"
 
@@ -151,7 +159,7 @@ def setup_season_leaderboard_routes(app):
             return Tr(
                 Td(str(s['rank']), cls="rank"),
                 Td(s['display_name'] or f"User {s['user_id']}", cls="player-name"),
-                Td(total_score, cls="total"),
+                Td(avg_score, cls="total"),
                 Td(str(s['tournaments_played']), cls="text-center"),
                 Td(top_finishes, cls="text-center compact"),
                 Td(avg_pos, cls="text-center"),
@@ -163,7 +171,7 @@ def setup_season_leaderboard_routes(app):
         # Build mobile cards
         def standing_card(s):
             """Create a mobile card for a season standing."""
-            total_score = format_score(s['total_score']) if s['total_score'] is not None else "-"
+            avg_score = format_score(int(s['average_score'])) if s['average_score'] is not None else "-"
             winnings = f"${s['total_winnings']:.0f}" if s['total_winnings'] and s['total_winnings'] > 0 else "-"
             avg_pos = f"{s['average_position']:.1f}" if s['average_position'] is not None else "-"
 
@@ -177,8 +185,8 @@ def setup_season_leaderboard_routes(app):
                 ),
                 Div(
                     Div(
-                        Span("Score:", cls="label"),
-                        Span(total_score, cls="value"),
+                        Span("Avg Score:", cls="label"),
+                        Span(avg_score, cls="value"),
                         cls="card-stat"
                     ),
                     Div(
@@ -221,14 +229,14 @@ def setup_season_leaderboard_routes(app):
                 year_selector,
                 cls="season-controls"
             ),
-            P("Lowest total score wins. Stats include all completed tournaments in the calendar year.", cls="season-description"),
+            P("Lowest average score wins. Stats include all completed tournaments in the calendar year.", cls="season-description"),
             # Desktop table
             Table(
                 Thead(
                     Tr(
                         Th("Rank"),
                         Th("Player"),
-                        Th("Total Score"),
+                        Th("Avg Score", title="Average score across all tournaments"),
                         Th("Tournaments", cls="text-center"),
                         Th("W/T3/T5/T10", cls="text-center", title="Wins / Top 3 / Top 5 / Top 10"),
                         Th("Avg Pos", cls="text-center", title="Average Position"),

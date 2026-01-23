@@ -198,6 +198,10 @@ def create_season_standings_view(db):
     drop_sql = "DROP VIEW IF EXISTS season_standings_view;"
 
     # Create VIEW with dynamic aggregation
+    # NOTE: fastsql creates singular table names from dataclass names (User -> user, not users)
+    rank_type = 'DECIMAL' if is_postgres else 'FLOAT'
+    user_table = '"user"'  # Quote "user" since it's a reserved word
+
     create_sql = f"""
 CREATE VIEW season_standings_view AS
 SELECT
@@ -209,6 +213,7 @@ SELECT
     COUNT(DISTINCT ps.tournament_id) as tournaments_played,
     COUNT(ps.id) as total_entries,
     SUM(CASE WHEN ps.best_two_total IS NOT NULL THEN ps.best_two_total ELSE 0 END) as total_score,
+    AVG(CASE WHEN ps.best_two_total IS NOT NULL THEN ps.best_two_total ELSE NULL END) as average_score,
 
     -- Finish counts
     SUM(CASE WHEN ps.rank = 1 THEN 1 ELSE 0 END) as wins,
@@ -217,19 +222,19 @@ SELECT
     SUM(CASE WHEN ps.rank <= 10 THEN 1 ELSE 0 END) as top10_finishes,
 
     -- Performance metrics
-    AVG(CAST(ps.rank AS {'DECIMAL' if is_postgres else 'FLOAT'})) as average_position,
+    AVG(CAST(ps.rank AS {rank_type})) as average_position,
     MIN(ps.rank) as best_finish,
 
     -- Winnings (sum of purses for tournaments won)
     SUM(
         CASE WHEN ps.rank = 1 AND t.entry_price IS NOT NULL
-        THEN t.entry_price * (SELECT COUNT(*) FROM picks WHERE tournament_id = t.id)
+        THEN t.entry_price * (SELECT COUNT(*) FROM pick WHERE tournament_id = t.id)
         ELSE 0 END
     ) as total_winnings
 
-FROM users u
-JOIN pickem_standings ps ON u.id = ps.user_id
-JOIN tournaments t ON ps.tournament_id = t.id
+FROM {user_table} u
+JOIN pickem_standing ps ON u.id = ps.user_id
+JOIN tournament t ON ps.tournament_id = t.id
 WHERE t.status = 'completed'
   AND ps.best_two_total IS NOT NULL
 GROUP BY season_year, u.id, u.display_name
