@@ -192,7 +192,8 @@ def create_season_standings_view(db):
     is_postgres = hasattr(db, 'conn_str') and db.conn_str.startswith('postgresql')
 
     # Use appropriate date extraction function
-    year_expr = "EXTRACT(YEAR FROM t.start_date)::text" if is_postgres else "strftime('%Y', t.start_date)"
+    # Note: start_date is stored as VARCHAR, must cast to DATE in PostgreSQL
+    year_expr = "EXTRACT(YEAR FROM t.start_date::date)::text" if is_postgres else "strftime('%Y', t.start_date)"
 
     # Drop existing view if it exists (for idempotency)
     drop_sql = "DROP VIEW IF EXISTS season_standings_view;"
@@ -238,7 +239,7 @@ JOIN tournament t ON ps.tournament_id = t.id
 WHERE t.status = 'completed'
   AND ps.best_two_total IS NOT NULL
 GROUP BY season_year, u.id, u.display_name
-ORDER BY total_score ASC;
+ORDER BY average_score ASC;
 """
 
     try:
