@@ -1361,11 +1361,11 @@ table.desktop-only {
         font-size: 0.8rem;
     }
     
-    /* Make tables scrollable on mobile */
-    .leaderboard-table,
-    .admin-table,
-    .tier-table,
-    .entries-table {
+    /* Make tables scrollable on mobile (but not desktop-only tables) */
+    .leaderboard-table:not(.desktop-only),
+    .admin-table:not(.desktop-only),
+    .tier-table:not(.desktop-only),
+    .entries-table:not(.desktop-only) {
         display: block;
         overflow-x: auto;
         -webkit-overflow-scrolling: touch;
