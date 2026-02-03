@@ -27,11 +27,14 @@ This document outlines potential automations to reduce manual admin work for tou
 - Change status: 'upcoming' → 'active'
 
 **Questions to Consider:**
-- Is Tuesday the right trigger day?
-- What time should this run (6 AM or different)?
-- Any other conditions before activating?
+- Is Tuesday the right trigger day? yes
+- What time should this run (6 AM or different)? this is fine
+- Any other conditions before activating? no
 
 **Priority:** HIGH - Eliminates weekly manual step
+
+**ZS Notes**
+Ready to implement. If there is no tournament this week then no touraments will be active. that is fine.
 
 ---
 
@@ -45,11 +48,14 @@ This document outlines potential automations to reduce manual admin work for tou
 - Prevents picks after tournament starts
 
 **Questions to Consider:**
-- Lock exactly at start_date or earlier (e.g., 1 hour before)?
-- How often should we check? Hourly? Every 15 minutes?
-- Any grace period for late picks?
+- Lock exactly at start_date or earlier (e.g., 1 hour before)? we can lock exactly at start time or whenever the next scheduled run is after the start time
+- How often should we check? Hourly? Every 15 minutes? every 3 hours is fine
+- Any grace period for late picks? Not needed yet
 
 **Priority:** HIGH - Critical for fairness
+
+**ZS Notes**
+ready to implement
 
 ---
 
@@ -60,15 +66,18 @@ This document outlines potential automations to reduce manual admin work for tou
 **Proposed Rule:**
 - Run every 2 hours on Sunday/Monday
 - Check DataGolf API for current round
-- Complete tournament if round >= 5 (tournament over)
-- Auto-send final leaderboard to GroupMe
+- Complete tournament if round >= 5 (tournament over) - this is not correct. Rounds will only ever get to 4. We actually want to check that all golfers have finished on the 4th round
+- Auto-send final leaderboard to GroupMe - yes
 
 **Questions to Consider:**
-- Is every 2 hours the right frequency?
+- Is every 2 hours the right frequency? 
 - Only check Sunday/Monday or every day?
-- Fallback if DataGolf API is down (e.g., auto-complete Monday evening)?
+- Fallback if DataGolf API is down (e.g., auto-complete Monday evening)? - no fallback. manual only
 
 **Priority:** HIGH - Timely results for users
+
+**ZS Notes**
+i think these rates are fine for now. 
 
 ---
 
@@ -97,6 +106,9 @@ This document outlines potential automations to reduce manual admin work for tou
 
 **Priority:** MEDIUM - Timing challenges make this tricky
 
+**ZS Notes**
+for now, this can remain manually given the challenges
+
 ---
 
 ## Automation Opportunity 5: Increased Auto-Sync Frequency
@@ -118,6 +130,9 @@ This document outlines potential automations to reduce manual admin work for tou
 - Should frequency vary by round (e.g., more frequent on Sunday)?
 
 **Priority:** MEDIUM - Nice to have, but API rate limits are a concern
+
+**ZS Notes** 
+we can leave this as is for now
 
 ---
 
@@ -155,6 +170,9 @@ This document outlines potential automations to reduce manual admin work for tou
 - Email, Slack, GroupMe, or skip entirely?
 
 **Priority:** LOW - Optional visibility feature
+
+**ZS Notes**
+no need for this 
 
 ---
 
