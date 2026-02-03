@@ -65,10 +65,9 @@ def get_season_standings(db, season_year=None):
             EXTRACT(YEAR FROM t.start_date::date)::text as season_year,
             u.id as user_id,
             u.display_name,
-            COUNT(DISTINCT ps.tournament_id) as tournaments_played,
+            COUNT(DISTINCT p.tournament_id) as tournaments_played,
             COUNT(ps.id) as total_entries,
             SUM(CASE WHEN ps.best_two_total IS NOT NULL THEN ps.best_two_total ELSE 0 END) as total_score,
-            AVG(CASE WHEN ps.best_two_total IS NOT NULL THEN ps.best_two_total ELSE NULL END) as average_score,
             SUM(CASE WHEN ps.rank = 1 THEN 1 ELSE 0 END) as wins,
             SUM(CASE WHEN ps.rank <= 3 THEN 1 ELSE 0 END) as top3_finishes,
             SUM(CASE WHEN ps.rank <= 5 THEN 1 ELSE 0 END) as top5_finishes,
@@ -77,11 +76,11 @@ def get_season_standings(db, season_year=None):
             MIN(ps.rank) as best_finish,
             COALESCE(SUM(w.winnings), 0)::DECIMAL as total_winnings
         FROM "user" u
-        JOIN pickem_standing ps ON u.id = ps.user_id
-        JOIN tournament t ON ps.tournament_id = t.id
+        JOIN pick p ON u.id = p.user_id
+        JOIN tournament t ON p.tournament_id = t.id
+        LEFT JOIN pickem_standing ps ON u.id = ps.user_id AND p.tournament_id = ps.tournament_id
         LEFT JOIN wins w ON u.id = w.user_id AND t.id = w.tournament_id
         WHERE t.status = 'completed'
-          AND ps.best_two_total IS NOT NULL
         GROUP BY EXTRACT(YEAR FROM t.start_date::date), u.id, u.display_name
     )
     SELECT * FROM standings
@@ -207,8 +206,6 @@ def setup_season_leaderboard_routes(app):
         # Build leaderboard rows
         def standing_row(s):
             """Create a table row for a season standing."""
-            # Format average score
-            avg_score = format_score(int(s['average_score'])) if s['average_score'] is not None else "-"
             avg_pos = f"{s['average_position']:.1f}" if s['average_position'] is not None else "-"
             best_finish = str(s['best_finish']) if s['best_finish'] is not None else "-"
 
@@ -224,7 +221,6 @@ def setup_season_leaderboard_routes(app):
             return Tr(
                 Td(str(s['rank']), cls="rank"),
                 Td(s['display_name'] or f"User {s['user_id']}", cls="player-name"),
-                Td(avg_score, cls="total"),
                 Td(str(s['tournaments_played']), cls="text-center"),
                 Td(top_finishes, cls="text-center compact"),
                 Td(avg_pos, cls="text-center"),
@@ -236,7 +232,6 @@ def setup_season_leaderboard_routes(app):
         # Build mobile cards
         def standing_card(s):
             """Create a mobile card for a season standing."""
-            avg_score = format_score(int(s['average_score'])) if s['average_score'] is not None else "-"
             winnings = f"${s['total_winnings']:.0f}" if s['total_winnings'] and s['total_winnings'] > 0 else "-"
             avg_pos = f"{s['average_position']:.1f}" if s['average_position'] is not None else "-"
 
@@ -249,11 +244,6 @@ def setup_season_leaderboard_routes(app):
                     cls="card-header"
                 ),
                 Div(
-                    Div(
-                        Span("Avg Score:", cls="label"),
-                        Span(avg_score, cls="value"),
-                        cls="card-stat"
-                    ),
                     Div(
                         Span("Tournaments:", cls="label"),
                         Span(str(s['tournaments_played']), cls="value"),
@@ -294,14 +284,13 @@ def setup_season_leaderboard_routes(app):
                 year_selector,
                 cls="season-controls"
             ),
-            P("Lowest average score wins. Stats include all completed tournaments in the calendar year.", cls="season-description"),
+            P("Stats include all completed tournaments in the calendar year.", cls="season-description"),
             # Desktop table
             Table(
                 Thead(
                     Tr(
                         Th("Rank"),
                         Th("Player"),
-                        Th("Avg Score", title="Average score across all tournaments"),
                         Th("Tournaments", cls="text-center"),
                         Th("W/T3/T5/T10", cls="text-center", title="Wins / Top 3 / Top 5 / Top 10"),
                         Th("Avg Pos", cls="text-center", title="Average Position"),
