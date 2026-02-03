@@ -107,6 +107,10 @@ class PickemStanding:
     tier4_position: Optional[int] = None
     best_two_total: Optional[int] = None
     rank: Optional[int] = None
+    third_best_score: Optional[int] = None  # 3rd lowest score (None if < 3 made cut)
+    has_third_made_cut: Optional[bool] = None  # True if 3rd golfer made cut
+    fourth_best_score: Optional[int] = None  # 4th lowest score (None if < 4 made cut)
+    has_fourth_made_cut: Optional[bool] = None  # True if 4th golfer made cut
     updated_at: Optional[str] = None
 
 

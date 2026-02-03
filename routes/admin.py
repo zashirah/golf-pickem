@@ -173,6 +173,12 @@ def setup_admin_routes(app):
                             Button("Update Statuses", type="submit", cls="btn btn-secondary"),
                             action="/admin/update-statuses",
                             method="post",
+                            style="display:inline; margin-right:10px;"
+                        ),
+                        Form(
+                            Button("Recalculate All Standings", type="submit", cls="btn btn-secondary"),
+                            action="/admin/recalculate-all-standings",
+                            method="post",
                             style="display:inline;"
                         ),
                     ),
@@ -417,6 +423,31 @@ def setup_admin_routes(app):
                 break
 
         return RedirectResponse("/admin", status_code=303)
+
+    @app.post("/admin/recalculate-all-standings")
+    def recalculate_all_standings(request):
+        """Recalculate standings for all tournaments (backfill tiebreaker data)."""
+        db = get_db()
+        user = get_current_user(request)
+        if not user or not user.is_admin:
+            return RedirectResponse("/", status_code=303)
+
+        from services.scoring import ScoringService
+
+        scoring = ScoringService(db)
+
+        count = 0
+        try:
+            for tournament in db.tournaments():
+                if tournament.status in ('active', 'completed'):
+                    scoring.calculate_standings(tournament.id)
+                    count += 1
+
+            logger.info(f"Recalculated standings for {count} tournaments")
+            return RedirectResponse(f"/admin?success=Recalculated+{count}+tournaments", status_code=303)
+        except Exception as e:
+            logger.error(f"Error recalculating standings: {e}", exc_info=True)
+            return RedirectResponse(f"/admin?error=Error+recalculating+standings", status_code=303)
 
     @app.post("/admin/sync-results")
     def sync_results(request, tournament_id: int):
