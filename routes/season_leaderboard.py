@@ -27,18 +27,38 @@ def get_season_standings(db, season_year=None):
 
     # Build the query dynamically - compute aggregates on the fly without a VIEW
     query = """
-    WITH wins AS (
+    WITH tournament_purses AS (
+        -- Calculate actual purse per tournament accounting for 3-pack pricing
+        -- For each user, determine if they paid entry_price or three_entry_price
+        SELECT
+            t.id as tournament_id,
+            t.entry_price,
+            t.three_entry_price,
+            SUM(CASE
+                WHEN user_max_entries >= 3 AND t.three_entry_price > 0
+                THEN t.three_entry_price
+                ELSE user_max_entries * t.entry_price
+            END) as total_purse
+        FROM tournament t
+        LEFT JOIN (
+            SELECT tournament_id, user_id, MAX(entry_number) as user_max_entries
+            FROM pick
+            GROUP BY tournament_id, user_id
+        ) entry_counts ON t.id = entry_counts.tournament_id
+        WHERE t.status = 'completed'
+          AND entry_counts.user_id IS NOT NULL
+        GROUP BY t.id, t.entry_price, t.three_entry_price
+    ),
+    wins AS (
         -- Calculate winnings for tournaments won (rank = 1)
         SELECT
             ps.user_id,
             ps.tournament_id,
-            COUNT(DISTINCT p.user_id) * t.entry_price as winnings
+            tp.total_purse as winnings
         FROM pickem_standing ps
-        JOIN tournament t ON ps.tournament_id = t.id
-        JOIN pick p ON t.id = p.tournament_id
+        JOIN tournament_purses tp ON ps.tournament_id = tp.tournament_id
         WHERE ps.rank = 1
-          AND t.status = 'completed'
-        GROUP BY ps.user_id, ps.tournament_id, t.entry_price
+          AND ps.user_id IS NOT NULL
     ),
     standings AS (
         SELECT
