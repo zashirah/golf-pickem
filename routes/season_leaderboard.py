@@ -90,7 +90,7 @@ def get_season_standings(db, season_year=None):
     if season_year:
         query += f" WHERE season_year = '{season_year}'"
 
-    query += " ORDER BY average_score ASC"
+    query += " ORDER BY total_winnings DESC, average_position ASC"
 
     try:
         result = list(db.db.conn.execute(sa.text(query)))
