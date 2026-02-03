@@ -151,6 +151,13 @@ def setup_admin_routes(app):
                                     method="post",
                                     style="display:inline"
                                 ) if t.status == 'active' else None,
+                                Form(
+                                    Button("Mark Complete", type="submit", cls="btn btn-sm btn-warning"),
+                                    Input(type="hidden", name="tournament_id", value=str(t.id)),
+                                    action="/admin/mark-completed",
+                                    method="post",
+                                    style="display:inline"
+                                ) if t.status == 'active' else None,
                             )
                         ) for t in tournaments]),
                         cls="admin-table"
@@ -388,6 +395,26 @@ def setup_admin_routes(app):
                 # Tournaments should only be marked completed when they actually finish
                 db.tournaments.update(id=t.id, status='upcoming')
                 logger.info(f"Set {t.name} back to upcoming (no longer active)")
+
+        return RedirectResponse("/admin", status_code=303)
+
+    @app.post("/admin/mark-completed")
+    def mark_tournament_completed(request, tournament_id: int):
+        """Manually mark a tournament as completed."""
+        db = get_db()
+        user = get_current_user(request)
+        if not user or not user.is_admin:
+            return RedirectResponse("/", status_code=303)
+
+        # Find and mark tournament as completed
+        for t in db.tournaments():
+            if t.id == tournament_id:
+                if t.status != 'completed':
+                    db.tournaments.update(id=t.id, status='completed')
+                    logger.info(f"Admin {user.groupme_name} marked {t.name} as completed")
+                    # Auto-send final leaderboard to GroupMe
+                    _send_final_leaderboard_groupme(db, tournament_id)
+                break
 
         return RedirectResponse("/admin", status_code=303)
 
