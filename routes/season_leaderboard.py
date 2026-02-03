@@ -303,7 +303,7 @@ def setup_season_leaderboard_routes(app):
                     )
                 ),
                 Tbody(*desktop_rows),
-                cls="leaderboard-table season-table"
+                cls="leaderboard-table season-table desktop-only"
             ) if ranked_standings else None,
             # Mobile cards
             Div(
