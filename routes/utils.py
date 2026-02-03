@@ -71,10 +71,13 @@ def get_active_tournament():
 
 
 def calculate_tournament_purse(tournament, picks):
-    """Calculate total purse for a tournament based on entries and entry price.
+    """Calculate total purse for a tournament based on entries and pricing.
+
+    Accounts for 3-pack pricing: users with 3 entries pay three_entry_price,
+    users with 1 or 2 entries pay entry_price per entry.
 
     Args:
-        tournament: Tournament object with entry_price field (in dollars)
+        tournament: Tournament object with entry_price and three_entry_price fields (in dollars)
         picks: List of pick entries for the tournament
 
     Returns:
@@ -82,5 +85,21 @@ def calculate_tournament_purse(tournament, picks):
     """
     if not tournament.entry_price or tournament.entry_price <= 0:
         return None
-    entry_count = len(picks)
-    return entry_count * tournament.entry_price
+
+    # Count entries per user
+    entries_per_user = {}
+    for pick in picks:
+        entry_num = getattr(pick, 'entry_number', 1) or 1
+        entries_per_user[pick.user_id] = max(entries_per_user.get(pick.user_id, 0), entry_num)
+
+    # Calculate purse based on 3-pack vs single entries
+    total_purse = 0
+    for user_id, max_entry_num in entries_per_user.items():
+        if max_entry_num >= 3 and tournament.three_entry_price and tournament.three_entry_price > 0:
+            # User has 3 entries, charge 3-pack price
+            total_purse += tournament.three_entry_price
+        else:
+            # User has 1-2 entries, charge per entry
+            total_purse += max_entry_num * tournament.entry_price
+
+    return total_purse

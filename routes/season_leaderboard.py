@@ -27,7 +27,20 @@ def get_season_standings(db, season_year=None):
 
     # Build the query dynamically - compute aggregates on the fly without a VIEW
     query = """
-    WITH standings AS (
+    WITH wins AS (
+        -- Calculate winnings for tournaments won (rank = 1)
+        SELECT
+            ps.user_id,
+            ps.tournament_id,
+            COUNT(DISTINCT p.user_id) * t.entry_price as winnings
+        FROM pickem_standing ps
+        JOIN tournament t ON ps.tournament_id = t.id
+        JOIN pick p ON t.id = p.tournament_id
+        WHERE ps.rank = 1
+          AND t.status = 'completed'
+        GROUP BY ps.user_id, ps.tournament_id, t.entry_price
+    ),
+    standings AS (
         SELECT
             EXTRACT(YEAR FROM t.start_date::date)::text as season_year,
             u.id as user_id,
@@ -42,10 +55,11 @@ def get_season_standings(db, season_year=None):
             SUM(CASE WHEN ps.rank <= 10 THEN 1 ELSE 0 END) as top10_finishes,
             AVG(CAST(ps.rank AS DECIMAL)) as average_position,
             MIN(ps.rank) as best_finish,
-            0::DECIMAL as total_winnings
+            COALESCE(SUM(w.winnings), 0)::DECIMAL as total_winnings
         FROM "user" u
         JOIN pickem_standing ps ON u.id = ps.user_id
         JOIN tournament t ON ps.tournament_id = t.id
+        LEFT JOIN wins w ON u.id = w.user_id AND t.id = w.tournament_id
         WHERE t.status = 'completed'
           AND ps.best_two_total IS NOT NULL
         GROUP BY EXTRACT(YEAR FROM t.start_date::date), u.id, u.display_name

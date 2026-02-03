@@ -466,14 +466,14 @@ def setup_leaderboard_routes(app):
             )
 
         # Sort by standings if available, otherwise just show picks
-        # DQ entries (None total) sort to bottom
+        # DQ entries (None rank) sort to bottom
         if standings:
             def get_sort_key(p):
                 entry_num = getattr(p, 'entry_number', 1) or 1
                 s = standings_by_key.get((p.user_id, entry_num))
-                if s and s.best_two_total is not None:
-                    return (False, s.best_two_total)
-                return (True, 0)  # DQ entries go last
+                if s and s.rank is not None:
+                    return (False, s.rank)
+                return (True, 999)  # DQ entries go last
             all_picks.sort(key=get_sort_key)
 
         # Status indicator
