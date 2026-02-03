@@ -157,20 +157,24 @@ def setup_season_leaderboard_routes(app):
         # Calculate rank for each entry (handle ties by showing same rank)
         ranked_standings = []
         current_rank = 1
-        prev_score = None
+        prev_winnings = None
+        prev_avg_pos = None
         for i, standing in enumerate(standings):
             # Convert row to dict
             standing_dict = dict(standing._mapping) if hasattr(standing, '_mapping') else dict(standing)
 
-            # If average score is different from previous, update rank
-            if prev_score is None or standing_dict['average_score'] != prev_score:
+            # If winnings or average position is different from previous, update rank
+            current_winnings = standing_dict.get('total_winnings')
+            current_avg_pos = standing_dict.get('average_position')
+            if prev_winnings is None or current_winnings != prev_winnings or current_avg_pos != prev_avg_pos:
                 current_rank = i + 1
 
             ranked_standings.append({
                 'rank': current_rank,
                 **standing_dict
             })
-            prev_score = standing_dict['average_score']
+            prev_winnings = current_winnings
+            prev_avg_pos = current_avg_pos
 
         # Count tournaments for this year
         import sqlalchemy as sa
