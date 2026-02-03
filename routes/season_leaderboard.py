@@ -144,7 +144,7 @@ def setup_season_leaderboard_routes(app):
         tournaments = list(db.db.conn.execute(
             sa.text("""SELECT COUNT(*) as count FROM tournament
                WHERE status = 'completed'
-               AND strftime('%Y', start_date) = :year"""),
+               AND EXTRACT(YEAR FROM start_date::date)::text = :year"""),
             {'year': year}
         ))
         tournament_count = tournaments[0][0] if tournaments else 0
