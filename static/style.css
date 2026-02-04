@@ -688,13 +688,15 @@ table.desktop-only {
 }
 
 /* Leaderboard Cards (Mobile) */
-.leaderboard-cards {
+.leaderboard-cards,
+.season-cards {
     display: flex;
     flex-direction: column;
     gap: 0.5rem;
 }
 
-.leaderboard-card {
+.leaderboard-card,
+.season-card {
     background: white;
     border-radius: var(--radius);
     box-shadow: var(--shadow);
@@ -702,10 +704,63 @@ table.desktop-only {
     overflow: hidden;
 }
 
-.leaderboard-card.current-user-card {
+.leaderboard-card.current-user-card,
+.season-card.current-user-card {
     border-color: var(--color-warning);
     border-width: 2px;
     background: #fffbeb;
+}
+
+/* Season card header and stats */
+.season-card .card-header {
+    display: flex;
+    align-items: center;
+    padding: 0.875rem 1rem;
+    gap: 0.75rem;
+    border-bottom: 1px solid var(--color-gray-100);
+}
+
+.season-card .card-rank {
+    font-weight: 600;
+    color: var(--color-gray-500);
+    font-size: 0.875rem;
+    min-width: 2rem;
+}
+
+.season-card .card-rank::before {
+    content: "#";
+}
+
+.season-card .card-player {
+    flex: 1;
+    font-weight: 600;
+    font-size: 1rem;
+}
+
+.season-card .card-stats {
+    padding: 0.75rem 1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.season-card .card-stat {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 1rem;
+}
+
+.season-card .card-stat .label {
+    font-size: 0.875rem;
+    color: var(--color-gray-600);
+    font-weight: 500;
+}
+
+.season-card .card-stat .value {
+    font-weight: 600;
+    color: var(--color-gray-900);
+    text-align: right;
 }
 
 .leaderboard-card details {
