@@ -233,49 +233,8 @@ def setup_season_leaderboard_routes(app):
                 cls=f"{'current-user' if is_current else ''}"
             )
 
-        # Build mobile cards
-        def standing_card(s):
-            """Create a mobile card for a season standing."""
-            winnings = f"${s['total_winnings']:.0f}" if s['total_winnings'] and s['total_winnings'] > 0 else "-"
-            avg_pos = f"{s['average_position']:.1f}" if s['average_position'] is not None else "-"
-
-            is_current = user and s['user_id'] == user.id
-
-            return Div(
-                Div(
-                    Span(f"#{s['rank']}", cls="card-rank"),
-                    Span(s['display_name'] or f"User {s['user_id']}", cls="card-player"),
-                    cls="card-header"
-                ),
-                Div(
-                    Div(
-                        Span("Tournaments:", cls="label"),
-                        Span(str(s['tournaments_played']), cls="value"),
-                        cls="card-stat"
-                    ),
-                    Div(
-                        Span("Wins:", cls="label"),
-                        Span(str(s['wins']), cls="value"),
-                        cls="card-stat"
-                    ),
-                    Div(
-                        Span("Avg Pos:", cls="label"),
-                        Span(avg_pos, cls="value"),
-                        cls="card-stat"
-                    ),
-                    Div(
-                        Span("Winnings:", cls="label"),
-                        Span(winnings, cls="value"),
-                        cls="card-stat"
-                    ),
-                    cls="card-stats"
-                ),
-                cls=f"season-card {'current-user-card' if is_current else ''}"
-            )
-
-        # Build table rows and mobile cards
+        # Build table rows
         desktop_rows = [standing_row(s) for s in ranked_standings]
-        mobile_cards = [standing_card(s) for s in ranked_standings]
 
         # Build content
         content = Div(
@@ -289,7 +248,7 @@ def setup_season_leaderboard_routes(app):
                 cls="season-controls"
             ),
             P("Stats include all completed tournaments in the calendar year.", cls="season-description"),
-            # Desktop table
+            # Season leaderboard table
             Table(
                 Thead(
                     Tr(
@@ -303,12 +262,7 @@ def setup_season_leaderboard_routes(app):
                     )
                 ),
                 Tbody(*desktop_rows),
-                cls="leaderboard-table season-table desktop-only"
-            ) if ranked_standings else None,
-            # Mobile cards
-            Div(
-                *mobile_cards,
-                cls="season-cards mobile-only"
+                cls="leaderboard-table season-table"
             ) if ranked_standings else None,
             # Empty state
             P("No standings for this season yet.") if not ranked_standings else None,
