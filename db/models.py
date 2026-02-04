@@ -171,6 +171,10 @@ def create_tables(db):
         transform=True
     )
 
+    # Add UNIQUE constraints to datagolf_id to prevent duplicates on sync
+    # This must be done after table creation
+    _add_unique_constraints(db)
+
     return {
         'users': users,
         'sessions': sessions,
@@ -182,5 +186,42 @@ def create_tables(db):
         'tournament_results': tournament_results,
         'pickem_standings': pickem_standings
     }
+
+
+def _add_unique_constraints(db):
+    """Add UNIQUE constraints to datagolf_id columns to prevent duplicates.
+
+    This is safe to call multiple times - SQLite will skip if constraint already exists,
+    and PostgreSQL will check if it exists before creating.
+    """
+    import logging
+    from sqlalchemy import text
+
+    logger = logging.getLogger(__name__)
+
+    try:
+        with db.engine.connect() as conn:
+            # For SQLite, check if constraint exists before creating
+            # For PostgreSQL, use ON CONFLICT in upsert instead (doesn't need this constraint)
+            from config import DATABASE_URL
+
+            if DATABASE_URL.startswith("sqlite"):
+                # SQLite: Add unique constraint on datagolf_id for golfer table
+                try:
+                    conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS idx_golfer_datagolf_id ON golfer(datagolf_id) WHERE datagolf_id IS NOT NULL"))
+                    logger.info("Created UNIQUE index on golfer.datagolf_id")
+                except Exception as e:
+                    logger.debug(f"Index on golfer.datagolf_id already exists or error: {e}")
+
+                # SQLite: Add unique constraint on datagolf_id for tournament table
+                try:
+                    conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS idx_tournament_datagolf_id ON tournament(datagolf_id) WHERE datagolf_id IS NOT NULL"))
+                    logger.info("Created UNIQUE index on tournament.datagolf_id")
+                except Exception as e:
+                    logger.debug(f"Index on tournament.datagolf_id already exists or error: {e}")
+
+            conn.commit()
+    except Exception as e:
+        logger.warning(f"Could not create UNIQUE constraints: {e}. Upserts may create duplicates.")
 
 

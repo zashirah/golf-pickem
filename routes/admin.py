@@ -7,6 +7,7 @@ from starlette.responses import RedirectResponse
 
 from components.layout import page_shell, card
 from routes.utils import get_current_user, get_db, get_auth_service
+from config import DATABASE_URL
 
 logger = logging.getLogger(__name__)
 
@@ -59,11 +60,84 @@ def _tournament_names_match(db_name: str, api_name: str) -> bool:
     return False
 
 
+def filter_and_sort_tournaments(tournaments, tab='active'):
+    """
+    Filter and sort tournaments by tab.
+
+    Active/Upcoming tab: Filter by status in ('active', 'upcoming'), sort soonest first,
+    with active tournaments prioritized at the top.
+
+    Completed tab: Filter by status = 'completed', sort newest first (reverse chronological).
+    """
+    if tab == 'completed':
+        # Filter completed tournaments
+        filtered = [t for t in tournaments if t.status == 'completed']
+        # Sort by start_date newest first (most recent at top)
+        def sort_key(t):
+            if not t.start_date:
+                return datetime.min
+            try:
+                return datetime.fromisoformat(t.start_date.replace('Z', '+00:00'))
+            except:
+                try:
+                    return datetime.fromisoformat(t.start_date)
+                except:
+                    return datetime.min
+
+        filtered.sort(key=sort_key, reverse=True)
+    else:
+        # Active/Upcoming tab (default)
+        filtered = [t for t in tournaments if t.status in ('active', 'upcoming')]
+
+        # Separate active and upcoming
+        active = [t for t in filtered if t.status == 'active']
+        upcoming = [t for t in filtered if t.status == 'upcoming']
+
+        # Sort upcoming by start_date soonest first
+        def sort_key(t):
+            if not t.start_date:
+                return datetime.max
+            try:
+                return datetime.fromisoformat(t.start_date.replace('Z', '+00:00'))
+            except:
+                try:
+                    return datetime.fromisoformat(t.start_date)
+                except:
+                    return datetime.max
+
+        upcoming.sort(key=sort_key)
+        # Active tournaments appear first, then upcoming
+        filtered = active + upcoming
+
+    return filtered
+
+
+def tournament_tabs(current_tab='active'):
+    """
+    Return tab navigation component for tournament tabs.
+
+    Returns a Div with tab links for Active/Upcoming and Completed tabs.
+    """
+    return Div(
+        A(
+            "Active/Upcoming",
+            href="/admin?tab=active",
+            cls=f"tab {'tab-active' if current_tab == 'active' else ''}"
+        ),
+        A(
+            "Completed",
+            href="/admin?tab=completed",
+            cls=f"tab {'tab-active' if current_tab == 'completed' else ''}"
+        ),
+        cls="tabs"
+    )
+
+
 def setup_admin_routes(app):
     """Register admin routes."""
 
     @app.get("/admin")
-    def admin_page(request, error: str = None, success: str = None):
+    def admin_page(request, error: str = None, success: str = None, tab: str = 'active'):
         db = get_db()
         auth_service = get_auth_service()
         user = get_current_user(request)
@@ -79,6 +153,7 @@ def setup_admin_routes(app):
         invite_url = f"{request.url.scheme}://{request.url.netloc}{invite_path}"
 
         tournaments = list(db.tournaments())
+        tournaments = filter_and_sort_tournaments(tournaments, tab)
         users = list(db.users())
 
         # Import alert for message display
@@ -111,6 +186,7 @@ def setup_admin_routes(app):
 
                 card(
                     "Tournaments",
+                    tournament_tabs(tab),
                     Table(
                         Thead(Tr(Th("Name"), Th("Status"), Th("Picks"), Th("Pricing"), Th("Actions"))),
                         Tbody(*[Tr(
@@ -623,32 +699,43 @@ def setup_admin_routes(app):
                 params[f"skill_{i}"] = skill
                 params[f"updated_at_{i}"] = now
             
-            # Single batch INSERT with ON CONFLICT (1 query instead of 200!)
-            logger.info(f"Batch inserting {len(values_list)} golfers in single query...")
+            # Batch upsert golfers with UNIQUE constraint on datagolf_id
+            logger.info(f"Batch upserting {len(values_list)} golfers...")
             with db_module.db.engine.connect() as conn:
-                sql = f"""
-                    INSERT INTO golfer (datagolf_id, name, country, dg_skill, updated_at)
-                    VALUES {', '.join(values_list)}
-                    ON CONFLICT (datagolf_id) DO UPDATE SET
-                        name = EXCLUDED.name,
-                        country = EXCLUDED.country,
-                        dg_skill = EXCLUDED.dg_skill,
-                        updated_at = EXCLUDED.updated_at
-                """
-                conn.execute(text(sql), params)
+                if DATABASE_URL.startswith("postgresql"):
+                    # PostgreSQL: use ON CONFLICT for upsert
+                    sql = f"""
+                        INSERT INTO golfer (datagolf_id, name, country, dg_skill, updated_at)
+                        VALUES {', '.join(values_list)}
+                        ON CONFLICT (datagolf_id) DO UPDATE SET
+                            name = EXCLUDED.name,
+                            country = EXCLUDED.country,
+                            dg_skill = EXCLUDED.dg_skill,
+                            updated_at = EXCLUDED.updated_at
+                    """
+                    conn.execute(text(sql), params)
+                else:
+                    # SQLite with UNIQUE index on datagolf_id: use INSERT OR REPLACE
+                    # This will update existing golfers or insert new ones
+                    sql = f"""
+                        INSERT OR REPLACE INTO golfer (datagolf_id, name, country, dg_skill, updated_at)
+                        VALUES {', '.join(values_list)}
+                    """
+                    conn.execute(text(sql), params)
+
                 conn.commit()
             
             logger.info(f"Synced {len(rankings)} ranked players to database")
 
-            # Sync schedule - just 5 tournaments
+            # Sync schedule - all tournaments from current season
             logger.info("Fetching tournament schedule...")
             schedule = client.get_schedule()
             logger.info(f"Fetched {len(schedule)} tournaments from schedule")
-            
+
             # Build batch insert for tournaments too
             tournament_values = []
             tournament_params = {}
-            for i, event in enumerate(schedule[:5]):  # Just 5 upcoming
+            for i, event in enumerate(schedule):
                 event_id = str(event.get('event_id', ''))
                 name = event.get('event_name', '')
                 start = event.get('start_date', '')
@@ -662,18 +749,42 @@ def setup_admin_routes(app):
             
             if tournament_values:
                 with db_module.db.engine.connect() as conn:
-                    sql = f"""
-                        INSERT INTO tournament (datagolf_id, datagolf_name, name, start_date, status, created_at)
-                        VALUES {', '.join(tournament_values)}
-                        ON CONFLICT (datagolf_id) DO UPDATE SET
-                            datagolf_name = EXCLUDED.datagolf_name,
-                            name = EXCLUDED.name,
-                            start_date = EXCLUDED.start_date
-                    """
-                    conn.execute(text(sql), tournament_params)
+                    if DATABASE_URL.startswith("postgresql"):
+                        # PostgreSQL: use ON CONFLICT for upsert
+                        # Only update name/dates, preserve admin-set status/locks
+                        sql = f"""
+                            INSERT INTO tournament (datagolf_id, datagolf_name, name, start_date, status, created_at)
+                            VALUES {', '.join(tournament_values)}
+                            ON CONFLICT (datagolf_id) DO UPDATE SET
+                                datagolf_name = EXCLUDED.datagolf_name,
+                                name = EXCLUDED.name,
+                                start_date = EXCLUDED.start_date
+                        """
+                        conn.execute(text(sql), tournament_params)
+                    else:
+                        # SQLite: More careful upsert - preserve admin-set fields
+                        # First, insert new tournaments (those that don't exist yet)
+                        insert_sql = f"""
+                            INSERT OR IGNORE INTO tournament (datagolf_id, datagolf_name, name, start_date, status, created_at)
+                            VALUES {', '.join(tournament_values)}
+                        """
+                        conn.execute(text(insert_sql), tournament_params)
+
+                        # Then update existing tournaments - only update name/dates, not status
+                        for i, event in enumerate(schedule):
+                            event_id = str(event.get('event_id', ''))
+                            name = event.get('event_name', '')
+                            start = event.get('start_date', '')
+                            update_sql = """
+                                UPDATE tournament
+                                SET datagolf_name = ?, name = ?, start_date = ?
+                                WHERE datagolf_id = ?
+                            """
+                            conn.execute(text(update_sql), [name, name, start, event_id])
+
                     conn.commit()
             
-            logger.info(f"Sync complete: {len(rankings)} players, {len(tournament_values)} tournaments")
+            logger.info(f"Sync complete: {len(rankings)} players, {len(schedule)} tournaments")
 
         except Exception as e:
             logger.error(f"Sync error: {e}", exc_info=True)
