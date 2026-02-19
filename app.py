@@ -55,7 +55,8 @@ setup_admin_routes(app)
 # ============ Initialize Scheduler ============
 
 from apscheduler.schedulers.background import BackgroundScheduler
-from jobs.tournament_jobs import activate_tournaments_job, lock_picks_job, complete_tournaments_job
+from jobs.tournament_jobs import activate_tournaments_job, complete_tournaments_job
+# from jobs.tournament_jobs import lock_picks_job  # DISABLED: Automatic pick locking is turned off
 import atexit
 
 # Create scheduler with Eastern Time timezone
@@ -71,15 +72,15 @@ scheduler.add_job(
     replace_existing=True
 )
 
-# Job 2: Lock picks every 3 hours ET
-scheduler.add_job(
-    lock_picks_job,
-    'cron',
-    hour='*/3',
-    args=[db_module],
-    id='lock_picks',
-    replace_existing=True
-)
+# Job 2: Lock picks every 3 hours ET [DISABLED]
+# scheduler.add_job(
+#     lock_picks_job,
+#     'cron',
+#     hour='*/3',
+#     args=[db_module],
+#     id='lock_picks',
+#     replace_existing=True
+# )
 
 # Job 3: Complete tournaments every 2 hours on Sun/Mon ET
 scheduler.add_job(
@@ -94,7 +95,7 @@ scheduler.add_job(
 
 # Start the scheduler
 scheduler.start()
-logger.info("APScheduler started with 3 background jobs")
+logger.info("APScheduler started with 2 background jobs (lock_picks_job disabled)")
 
 # Ensure scheduler shuts down gracefully when app exits
 atexit.register(lambda: scheduler.shutdown())
