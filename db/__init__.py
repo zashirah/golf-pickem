@@ -61,22 +61,7 @@ class PostgresDatabase(Database):
         )
 
         self.meta = sa.MetaData()
-
-        # Reflect with retry logic for transient connection failures
-        max_retries = 3
-        for attempt in range(max_retries):
-            try:
-                self.meta.reflect(bind=self.engine)
-                break
-            except (OperationalError, DBAPIError) as e:
-                if attempt < max_retries - 1:
-                    logger.warning(f"Reflection failed (attempt {attempt + 1}/{max_retries}): {e}. Retrying...")
-                    import time
-                    time.sleep(1)
-                else:
-                    logger.warning(f"Reflection failed after {max_retries} attempts. Continuing with empty metadata.")
-                    # Continue without reflection - tables will be created dynamically
-
+        self.meta.reflect(bind=self.engine)
         self.meta.bind = self.engine
 
         # Use resilient connection wrapper instead of direct connection
