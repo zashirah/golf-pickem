@@ -450,7 +450,7 @@ def setup_admin_routes(app):
         if not user or not user.is_admin:
             return RedirectResponse("/", status_code=303)
 
-        # Find tournament and toggle lock using raw SQL to avoid updating primary key
+        # Find tournament and toggle lock
         from sqlalchemy import text
         tournament = None
         for t in db.tournaments():
@@ -459,12 +459,12 @@ def setup_admin_routes(app):
                 break
 
         if tournament:
-            with db.db.engine.connect() as conn:
+            # Use raw SQL to avoid updating the primary key which causes table locks
+            with db.db.engine.begin() as conn:
                 conn.execute(
                     text("UPDATE tournament SET picks_locked = :locked WHERE id = :id"),
                     {"locked": not tournament.picks_locked, "id": tournament_id}
                 )
-                conn.commit()
 
         return RedirectResponse("/admin", status_code=303)
 
