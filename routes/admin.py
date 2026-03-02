@@ -844,11 +844,11 @@ def setup_admin_routes(app):
                         Td(
                             Form(
                                 Select(
-                                    Option("0 (Excluded)", value="0", selected=(tier_num == 0)),
-                                    Option("1", value="1", selected=(tier_num == 1)),
-                                    Option("2", value="2", selected=(tier_num == 2)),
-                                    Option("3", value="3", selected=(tier_num == 3)),
-                                    Option("4", value="4", selected=(tier_num == 4)),
+                                    Option("0 (Excluded)", value="0", selected=True) if tier_num == 0 else Option("0 (Excluded)", value="0"),
+                                    Option("1", value="1", selected=True) if tier_num == 1 else Option("1", value="1"),
+                                    Option("2", value="2", selected=True) if tier_num == 2 else Option("2", value="2"),
+                                    Option("3", value="3", selected=True) if tier_num == 3 else Option("3", value="3"),
+                                    Option("4", value="4", selected=True) if tier_num == 4 else Option("4", value="4"),
                                     name="tier"
                                 ),
                                 Input(type="hidden", name="field_id", value=str(f.id)),
