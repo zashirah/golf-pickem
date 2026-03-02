@@ -196,16 +196,18 @@ def setup_season_leaderboard_routes(app):
             for y in available_years
         ]
 
-        year_selector = Div(
-            Label("Season:", fr="year-select"),
-            Select(
-                *year_options,
-                name="year",
-                id="year-select",
-                onchange="window.location.href='/season-leaderboard?year=' + this.value"
-            ),
-            cls="season-selector"
-        ) if len(available_years) > 1 else None
+        year_selector_list = []
+        if len(available_years) > 1:
+            year_selector_list.append(Div(
+                Label("Season:", fr="year-select"),
+                Select(
+                    *year_options,
+                    name="year",
+                    id="year-select",
+                    onchange="window.location.href='/season-leaderboard?year=' + this.value"
+                ),
+                cls="season-selector"
+            ))
 
         # Build leaderboard rows
         def standing_row(s):
@@ -244,7 +246,7 @@ def setup_season_leaderboard_routes(app):
                 cls="season-header"
             ),
             Div(
-                year_selector,
+                *year_selector_list,
                 cls="season-controls"
             ),
             P("Stats include all completed tournaments in the calendar year.", cls="season-description"),
@@ -263,9 +265,9 @@ def setup_season_leaderboard_routes(app):
                 ),
                 Tbody(*desktop_rows),
                 cls="leaderboard-table season-table"
-            ) if ranked_standings else None,
+            ) if ranked_standings else "",
             # Empty state
-            P("No standings for this season yet.") if not ranked_standings else None,
+            P("No standings for this season yet.") if not ranked_standings else "",
             cls="season-leaderboard-page"
         )
 

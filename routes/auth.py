@@ -12,21 +12,29 @@ def setup_auth_routes(app, auth_service):
         if user:
             return RedirectResponse("/", status_code=303)
 
+        # Build form children list
+        form_children = []
+        if error:
+            form_children.append(alert(error, "error"))
+
+        form_children.extend([
+            Div(
+                Label("GroupMe Name", fr="groupme_name"),
+                Input(type="text", name="groupme_name", id="groupme_name", required=True),
+                cls="form-group"
+            ),
+            Div(
+                Label("Password", fr="password"),
+                Input(type="password", name="password", id="password", required=True),
+                cls="form-group"
+            ),
+            Button("Login", type="submit", cls="btn btn-primary btn-block")
+        ])
+
         content = card(
             "Login",
             Form(
-                alert(error, "error") if error else None,
-                Div(
-                    Label("GroupMe Name", fr="groupme_name"),
-                    Input(type="text", name="groupme_name", id="groupme_name", required=True),
-                    cls="form-group"
-                ),
-                Div(
-                    Label("Password", fr="password"),
-                    Input(type="password", name="password", id="password", required=True),
-                    cls="form-group"
-                ),
-                Button("Login", type="submit", cls="btn btn-primary btn-block"),
+                *form_children,
                 action="/login",
                 method="post"
             ),
@@ -63,6 +71,33 @@ def setup_auth_routes(app, auth_service):
                 )
             )
 
+        # Build form children list
+        form_children = []
+        if error:
+            form_children.append(alert(error, "error"))
+
+        form_children.extend([
+            Input(type="hidden", name="invite", value=invite),
+            Div(
+                Label("GroupMe Name", fr="groupme_name"),
+                Input(type="text", name="groupme_name", id="groupme_name", required=True,
+                      placeholder="Exactly as shown in GroupMe"),
+                Small("This is how your name will appear and how you'll log in. Must match your GroupMe display name exactly.", style="color: #666;"),
+                cls="form-group"
+            ),
+            Div(
+                Label("Password", fr="password"),
+                Input(type="password", name="password", id="password", required=True, minlength="6"),
+                cls="form-group"
+            ),
+            Div(
+                Label("Confirm Password", fr="password2"),
+                Input(type="password", name="password2", id="password2", required=True),
+                cls="form-group"
+            ),
+            Button("Create Account", type="submit", cls="btn btn-primary btn-block")
+        ])
+
         content = card(
             "Create Account",
             Div(
@@ -70,26 +105,7 @@ def setup_auth_routes(app, auth_service):
                 cls="registration-notice"
             ),
             Form(
-                alert(error, "error") if error else None,
-                Input(type="hidden", name="invite", value=invite),
-                Div(
-                    Label("GroupMe Name", fr="groupme_name"),
-                    Input(type="text", name="groupme_name", id="groupme_name", required=True,
-                          placeholder="Exactly as shown in GroupMe"),
-                    Small("This is how your name will appear and how you'll log in. Must match your GroupMe display name exactly.", style="color: #666;"),
-                    cls="form-group"
-                ),
-                Div(
-                    Label("Password", fr="password"),
-                    Input(type="password", name="password", id="password", required=True, minlength="6"),
-                    cls="form-group"
-                ),
-                Div(
-                    Label("Confirm Password", fr="password2"),
-                    Input(type="password", name="password2", id="password2", required=True),
-                    cls="form-group"
-                ),
-                Button("Create Account", type="submit", cls="btn btn-primary btn-block"),
+                *form_children,
                 action="/register",
                 method="post"
             ),

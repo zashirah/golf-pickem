@@ -323,28 +323,33 @@ def setup_leaderboard_routes(app):
 
         # Create alert for any messages (from URL or auto-sync)
         display_message = message or auto_sync_message
-        message_alert = alert(display_message, "warning") if display_message else None
+        message_alert_list = []
+        if display_message:
+            message_alert_list.append(alert(display_message, "warning"))
 
         # Build tournament selector
-        tournament_options = [
-            Option(
-                f"{t.name}" + (" (Live)" if t.status == 'active' else ""),
-                value=str(t.id),
-                selected=(t.id == tournament.id)
+        tournament_selector_list = []
+        if len(viewable) > 1:
+            tournament_options = [
+                Option(
+                    f"{t.name}" + (" (Live)" if t.status == 'active' else ""),
+                    value=str(t.id),
+                    selected=(t.id == tournament.id)
+                )
+                for t in viewable
+            ]
+            tournament_selector_list.append(
+                Div(
+                    Label("Tournament:", fr="tournament-select"),
+                    Select(
+                        *tournament_options,
+                        name="tournament_id",
+                        id="tournament-select",
+                        onchange="window.location.href='/leaderboard?tournament_id=' + this.value"
+                    ),
+                    cls="tournament-selector"
+                )
             )
-            for t in viewable
-        ]
-
-        tournament_selector = Div(
-            Label("Tournament:", fr="tournament-select"),
-            Select(
-                *tournament_options,
-                name="tournament_id",
-                id="tournament-select",
-                onchange="window.location.href='/leaderboard?tournament_id=' + this.value"
-            ),
-            cls="tournament-selector"
-        ) if len(viewable) > 1 else None
 
         users_by_id = {u.id: u for u in db.users()}
         golfers_by_id = {g.id: g for g in db.golfers()}
@@ -558,9 +563,9 @@ def setup_leaderboard_routes(app):
                     ),
                     Tbody(*desktop_rows),
                     cls="leaderboard-table"
-                ) if all_picks else None,
-                P("No picks yet for this tournament.") if not all_picks else None,
-                A("Make Picks", href="/picks", cls="btn btn-primary") if tournament.status == 'active' else None,
+                ) if all_picks else "",
+                P("No picks yet for this tournament.") if not all_picks else "",
+                A("Make Picks", href="/picks", cls="btn btn-primary") if tournament.status == 'active' else "",
             )
 
         # Calculate purse for header display
@@ -587,31 +592,33 @@ def setup_leaderboard_routes(app):
                 Span(f"${tournament.three_entry_price:.0f}", style="color: #666;")
             ))
         
-        purse_display = Div(
-            *pricing_info,
-            cls="tournament-purse",
-            style="display: flex; align-items: center; flex-wrap: wrap; gap: 0.5rem;"
-        ) if pricing_info else None
+        purse_display_list = []
+        if pricing_info:
+            purse_display_list.append(Div(
+                *pricing_info,
+                cls="tournament-purse",
+                style="display: flex; align-items: center; flex-wrap: wrap; gap: 0.5rem;"
+            ))
 
         return page_shell(
             "Leaderboard",
             Div(
-                message_alert,
+                *message_alert_list,
                 Div(
                     Div(
                         H1(f"Leaderboard: {tournament.name}"),
                         status_badge,
-                        purse_display,
+                        *purse_display_list,
                         cls="leaderboard-title"
                     ),
                     Div(
-                        tournament_selector,
+                        *tournament_selector_list,
                         Div(
                             sync_info,
                             refresh_button,
                             groupme_send_button,
                             style="display: flex; gap: 10px; align-items: center;"
-                        ) if sync_info or refresh_button or groupme_send_button else None,
+                        ) if (sync_info or refresh_button or groupme_send_button) else "",
                         cls="leaderboard-controls"
                     ),
                     cls="leaderboard-header"

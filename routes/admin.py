@@ -158,15 +158,19 @@ def setup_admin_routes(app):
 
         # Import alert for message display
         from components.layout import alert
-        error_msg = alert(error, "error") if error else None
-        success_msg = alert(success, "success") if success else None
+
+        # Build message list
+        messages = []
+        if error:
+            messages.append(alert(error, "error"))
+        if success:
+            messages.append(alert(success, "success"))
 
         return page_shell(
             "Admin",
             Div(
                 H1("Admin Dashboard"),
-                error_msg,
-                success_msg,
+                *messages,
 
                 card(
                     "Invite Link",
@@ -219,21 +223,21 @@ def setup_admin_routes(app):
                                     action="/admin/set-active",
                                     method="post",
                                     style="display:inline"
-                                ) if t.status != 'active' else None,
+                                ) if t.status != 'active' else "",
                                 Form(
                                     Button("Sync Results", type="submit", cls="btn btn-sm btn-primary"),
                                     Input(type="hidden", name="tournament_id", value=str(t.id)),
                                     action="/admin/sync-results",
                                     method="post",
                                     style="display:inline"
-                                ) if t.status == 'active' else None,
+                                ) if t.status == 'active' else "",
                                 Form(
                                     Button("Mark Complete", type="submit", cls="btn btn-sm btn-warning"),
                                     Input(type="hidden", name="tournament_id", value=str(t.id)),
                                     action="/admin/mark-completed",
                                     method="post",
                                     style="display:inline"
-                                ) if t.status == 'active' else None,
+                                ) if t.status == 'active' else "",
                             )
                         ) for t in tournaments]),
                         cls="admin-table"
@@ -275,7 +279,7 @@ def setup_admin_routes(app):
                                     action="/admin/delete-user",
                                     method="post",
                                     style="display:inline"
-                                ) if not u.is_admin else None,
+                                ) if not u.is_admin else "",
                             )
                         ) for u in users]),
                         cls="admin-table"
@@ -311,7 +315,7 @@ def setup_admin_routes(app):
                             action="/admin/groupme/test",
                             method="post",
                             style="display:inline;"
-                        ) if _get_groupme_bot_id(db) else None,
+                        ) if _get_groupme_bot_id(db) else "",
                         cls="groupme-settings"
                     )
                 ),
@@ -955,6 +959,15 @@ def setup_admin_routes(app):
                 cls="match-status"
             )
             
+            # Build missing players section conditionally
+            missing_section = []
+            if missing:
+                missing_children = [H3(f"Players to be Created ({len(missing)})")]
+                missing_children.append(Ul(*[Li(f"{p.get('player_name', 'Unknown')} ({p.get('country', 'Unknown')})") for p in missing[:20]]))
+                if len(missing) > 20:
+                    missing_children.append(P(f"...and {len(missing) - 20} more"))
+                missing_section.append(Div(*missing_children, cls="missing-players"))
+
             return page_shell(
                 "Confirm Auto-Assign Tiers",
                 Div(
@@ -971,7 +984,7 @@ def setup_admin_routes(app):
                         H3("Field Summary"),
                         P(f"Total players in DataGolf field: {len(field_players)}"),
                         P(f"Players found in database: {len(matched)}"),
-                        P(f"Players to be created: {len(missing)}", cls="text-info") if missing else None,
+                        P(f"Players to be created: {len(missing)}", cls="text-info") if missing else "",
                         cls="field-summary"
                     ),
                     Div(
@@ -984,12 +997,7 @@ def setup_admin_routes(app):
                         ),
                         cls="tier-preview"
                     ),
-                    Div(
-                        H3(f"Players to be Created ({len(missing)})") if missing else None,
-                        Ul(*[Li(f"{p.get('player_name', 'Unknown')} ({p.get('country', 'Unknown')})") for p in missing[:20]]) if missing else None,
-                        P(f"...and {len(missing) - 20} more") if len(missing) > 20 else None,
-                        cls="missing-players"
-                    ) if missing else None,
+                    *missing_section,
                     Div(
                         Form(
                             Button("✓ Confirm & Assign Tiers", type="submit", cls="btn btn-primary"),
@@ -1190,15 +1198,19 @@ def setup_admin_routes(app):
 
         # Import alert for messages
         from components.layout import alert
-        error_msg = alert(error, "error") if error else None
-        success_msg = alert(success, "success") if success else None
+
+        # Build message list
+        messages = []
+        if error:
+            messages.append(alert(error, "error"))
+        if success:
+            messages.append(alert(success, "success"))
 
         return page_shell(
             "Tournament Pricing",
             Div(
                 H1(f"Pricing: {tournament.name}"),
-                error_msg,
-                success_msg,
+                *messages,
                 card(
                     "Entry Pricing",
                     Form(

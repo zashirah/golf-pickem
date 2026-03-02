@@ -200,7 +200,7 @@ def _render_summary_view(tournament, all_user_picks, next_entry, locked_msg,
                             style="display:inline; margin-left: 0.5rem"
                         ),
                         cls="actions-cell"
-                    ) if not tournament.picks_locked else None,
+                    ) if not tournament.picks_locked else "",
                     cls="actions"
                 )
             )
@@ -214,7 +214,7 @@ def _render_summary_view(tournament, all_user_picks, next_entry, locked_msg,
                 Th("Tier 2"),
                 Th("Tier 3"),
                 Th("Tier 4"),
-                Th("Actions") if not tournament.picks_locked else None
+                Th("Actions") if not tournament.picks_locked else ""
             )
         ),
         Tbody(*table_rows),
@@ -287,7 +287,7 @@ def _render_edit_view(tournament, all_user_picks, current_entry, user_pick,
         "Edit Entry",
         Div(
             Div(
-                A("< Back to My Picks", href="/picks", cls="back-link") if all_user_picks else None,
+                A("< Back to My Picks", href="/picks", cls="back-link") if all_user_picks else "",
                 H1(f"{'Edit' if user_pick else 'New'} Entry {current_entry}"),
                 P("Pick one golfer from each tier."),
                 cls="edit-header"
@@ -301,7 +301,7 @@ def _render_edit_view(tournament, all_user_picks, current_entry, user_pick,
                         type="submit",
                         cls="btn btn-primary btn-lg"
                     ),
-                    A("Cancel", href="/picks", cls="btn btn-secondary btn-lg") if all_user_picks else None,
+                    A("Cancel", href="/picks", cls="btn btn-secondary btn-lg") if all_user_picks else "",
                     cls="form-actions form-actions-top"
                 ),
                 tier_section(1),
@@ -314,13 +314,13 @@ def _render_edit_view(tournament, all_user_picks, current_entry, user_pick,
                         type="submit",
                         cls="btn btn-primary btn-lg"
                     ),
-                    A("Cancel", href="/picks", cls="btn btn-secondary btn-lg") if all_user_picks else None,
+                    A("Cancel", href="/picks", cls="btn btn-secondary btn-lg") if all_user_picks else "",
                     cls="form-actions"
                 ),
                 action="/picks",
                 method="post",
                 id="picks-form"
-            ) if not tournament.picks_locked else None,
+            ) if not tournament.picks_locked else "",
             cls="picks-page edit-mode"
         ),
         user=user
