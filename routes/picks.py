@@ -221,12 +221,17 @@ def _render_summary_view(tournament, all_user_picks, next_entry, locked_msg,
         cls="entries-table"
     )
 
+    # Build locked message list
+    locked_msg_list = []
+    if locked_msg:
+        locked_msg_list.append(locked_msg)
+
     return page_shell(
         "My Picks",
         Div(
             H1(f"My Picks: {tournament.name}"),
             P("Your entries for this tournament. Best 2 of 4 scores count."),
-            locked_msg,
+            *locked_msg_list,
             Div(
                 entries_table,
                 Div(
@@ -283,6 +288,11 @@ def _render_edit_view(tournament, all_user_picks, current_entry, user_pick,
             cls=f"tier-section tier-{tier_num}"
         )
 
+    # Build locked message list
+    locked_msg_list = []
+    if locked_msg:
+        locked_msg_list.append(locked_msg)
+
     return page_shell(
         "Edit Entry",
         Div(
@@ -292,7 +302,7 @@ def _render_edit_view(tournament, all_user_picks, current_entry, user_pick,
                 P("Pick one golfer from each tier."),
                 cls="edit-header"
             ),
-            locked_msg,
+            *locked_msg_list,
             Form(
                 Input(type="hidden", name="entry", value=str(current_entry)),
                 Div(

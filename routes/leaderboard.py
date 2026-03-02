@@ -482,11 +482,11 @@ def setup_leaderboard_routes(app):
             all_picks.sort(key=get_sort_key)
 
         # Status indicator
-        status_badge = None
+        status_badge_list = []
         if tournament.status == 'active':
-            status_badge = Span("Live", cls="badge badge-live")
+            status_badge_list.append(Span("Live", cls="badge badge-live"))
         elif tournament.status == 'completed':
-            status_badge = Span("Final", cls="badge badge-final")
+            status_badge_list.append(Span("Final", cls="badge badge-final"))
 
         # Last sync info
         sync_info = None
@@ -607,18 +607,18 @@ def setup_leaderboard_routes(app):
                 Div(
                     Div(
                         H1(f"Leaderboard: {tournament.name}"),
-                        status_badge,
+                        *status_badge_list,
                         *purse_display_list,
                         cls="leaderboard-title"
                     ),
                     Div(
                         *tournament_selector_list,
-                        Div(
-                            sync_info,
-                            refresh_button,
-                            groupme_send_button,
+                        *([Div(
+                            *(([sync_info] if sync_info else []) +
+                              ([refresh_button] if refresh_button else []) +
+                              ([groupme_send_button] if groupme_send_button else [])),
                             style="display: flex; gap: 10px; align-items: center;"
-                        ) if (sync_info or refresh_button or groupme_send_button) else "",
+                        )] if (sync_info or refresh_button or groupme_send_button) else []),
                         cls="leaderboard-controls"
                     ),
                     cls="leaderboard-header"
