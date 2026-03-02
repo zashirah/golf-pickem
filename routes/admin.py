@@ -199,9 +199,9 @@ def setup_admin_routes(app):
                                 Span("Locked", cls="badge badge-locked") if t.picks_locked else Span("Open", cls="badge badge-open")
                             ),
                             Td(
-                                f"${t.entry_price}" if t.entry_price else "-",
-                                " | " if t.entry_price and t.three_entry_price else None,
-                                f"3-pack: ${t.three_entry_price}" if t.three_entry_price else None
+                                (f"${t.entry_price}" if t.entry_price else "-") +
+                                (" | " if (t.entry_price and t.three_entry_price) else "") +
+                                (f"3-pack: ${t.three_entry_price}" if t.three_entry_price else "")
                             ),
                             Td(
                                 A("Field", href=f"/admin/tournament/{t.id}/field", cls="btn btn-sm"),
