@@ -38,19 +38,25 @@ def setup_home_routes(app):
             picks = [p for p in db.picks() if p.user_id == user.id and p.tournament_id == current.id]
             user_pick = picks[0] if picks else None
 
+        # Build card content based on tournament status
+        if current:
+            card_content = card(
+                "Current Tournament",
+                P(current.name),
+                A("Make Picks", href="/picks", cls="btn btn-primary"),
+                A("View Leaderboard", href="/leaderboard", cls="btn btn-secondary"),
+            )
+        else:
+            card_content = card(
+                "No Active Tournament",
+                P("Check back when the next tournament starts."),
+            )
+
         return page_shell(
             "Dashboard",
             Div(
                 H1(f"Welcome, {user.groupme_name or user.username}"),
-                card(
-                    "Current Tournament",
-                    P(current.name if current else "No active tournament"),
-                    A("Make Picks", href="/picks", cls="btn btn-primary") if current else None,
-                    A("View Leaderboard", href="/leaderboard", cls="btn btn-secondary"),
-                ) if current else card(
-                    "No Active Tournament",
-                    P("Check back when the next tournament starts."),
-                ),
+                card_content,
                 cls="dashboard"
             ),
             user=user
@@ -116,7 +122,7 @@ def setup_home_routes(app):
                 
                 Div(
                     A("← Back to Home", href="/", cls="btn btn-secondary"),
-                    A("View Leaderboard", href="/leaderboard", cls="btn btn-primary") if user else None,
+                    A("View Leaderboard", href="/leaderboard", cls="btn btn-primary") if user else "",
                     style="margin-top: 2rem; display: flex; gap: 1rem;"
                 ),
                 
@@ -136,15 +142,18 @@ def setup_home_routes(app):
 
         from components.layout import alert
 
-        error_msg = alert(error, "error") if error else None
-        success_msg = alert(success, "success") if success else None
+        # Build message list (only include if present)
+        messages = []
+        if error:
+            messages.append(alert(error, "error"))
+        if success:
+            messages.append(alert(success, "success"))
 
         return page_shell(
             "Profile",
             Div(
                 H1("Profile Settings"),
-                error_msg,
-                success_msg,
+                *messages,
                 card(
                     "GroupMe Name",
                     Form(
