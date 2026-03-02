@@ -81,8 +81,12 @@ def alert(message: str, type: str = "info"):
 
 def card(title: str, *content, cls: str = ""):
     """Card component."""
+    title_elements = []
+    if title:
+        title_elements.append(H3(title, cls="card-title"))
+
     return Div(
-        H3(title, cls="card-title") if title else None,
+        *title_elements,
         *content,
         cls=f"card {cls}"
     )
