@@ -245,9 +245,9 @@ def _render_summary_view(tournament, all_user_picks, next_entry, locked_msg,
 def _render_edit_view(tournament, all_user_picks, current_entry, user_pick,
                       locked_msg, golfers_by_id, user, db):
     """Render the picks edit view."""
-    # Get field organized by tier
+    # Get field organized by tier (exclude tier 0 - excluded golfers)
     field = list(db.tournament_field())
-    field_for_tournament = [f for f in field if f.tournament_id == tournament.id]
+    field_for_tournament = [f for f in field if f.tournament_id == tournament.id and f.tier > 0]
 
     tiers = {1: [], 2: [], 3: [], 4: []}
     for f in field_for_tournament:
