@@ -821,7 +821,7 @@ def setup_admin_routes(app):
         field = [f for f in db.tournament_field() if f.tournament_id == tid]
         golfers_by_id = {g.id: g for g in db.golfers()}
 
-        field_by_tier = {0: [], 1: [], 2: [], 3: [], 4: []}
+        field_by_tier = {1: [], 2: [], 3: [], 4: []}
         for f in field:
             g = golfers_by_id.get(f.golfer_id)
             if g:
@@ -832,9 +832,8 @@ def setup_admin_routes(app):
 
         def tier_table(tier_num):
             golfers = field_by_tier.get(tier_num, [])
-            tier_label = "Excluded Golfers" if tier_num == 0 else f"Tier {tier_num}"
             return Div(
-                H3(f"{tier_label} ({len(golfers)} golfers)"),
+                H3(f"Tier {tier_num} ({len(golfers)} golfers)"),
                 Table(
                     Thead(Tr(Th("Name"), Th("Country"), Th("Skill"), Th("Move"))),
                     Tbody(*[Tr(
@@ -844,11 +843,10 @@ def setup_admin_routes(app):
                         Td(
                             Form(
                                 Select(
-                                    Option("0 (Excluded)", value="0", selected=True) if tier_num == 0 else Option("0 (Excluded)", value="0"),
-                                    Option("1", value="1", selected=True) if tier_num == 1 else Option("1", value="1"),
-                                    Option("2", value="2", selected=True) if tier_num == 2 else Option("2", value="2"),
-                                    Option("3", value="3", selected=True) if tier_num == 3 else Option("3", value="3"),
-                                    Option("4", value="4", selected=True) if tier_num == 4 else Option("4", value="4"),
+                                    Option("1", value="1", selected=(tier_num == 1)),
+                                    Option("2", value="2", selected=(tier_num == 2)),
+                                    Option("3", value="3", selected=(tier_num == 3)),
+                                    Option("4", value="4", selected=(tier_num == 4)),
                                     name="tier"
                                 ),
                                 Input(type="hidden", name="field_id", value=str(f.id)),
@@ -873,7 +871,6 @@ def setup_admin_routes(app):
                     href=f"/admin/tournament/{tid}/field/auto-confirm"
                 ),
                 Div(
-                    tier_table(0),
                     tier_table(1),
                     tier_table(2),
                     tier_table(3),
