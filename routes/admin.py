@@ -984,7 +984,7 @@ def setup_admin_routes(app):
                         H3("Field Summary"),
                         P(f"Total players in DataGolf field: {len(field_players)}"),
                         P(f"Players found in database: {len(matched)}"),
-                        P(f"Players to be created: {len(missing)}", cls="text-info") if missing else "",
+                        *([ P(f"Players to be created: {len(missing)}", cls="text-info") ] if missing else []),
                         cls="field-summary"
                     ),
                     Div(

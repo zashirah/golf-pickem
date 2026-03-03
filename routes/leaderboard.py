@@ -553,7 +553,7 @@ def setup_leaderboard_routes(app):
             tournament_content = Div(
                 P("Best 2 of 4 scores against par. Lowest total wins."),
                 # Leaderboard table
-                Table(
+                *([ Table(
                     Thead(
                         Tr(
                             Th("Rank"), Th("Player"),
@@ -563,9 +563,9 @@ def setup_leaderboard_routes(app):
                     ),
                     Tbody(*desktop_rows),
                     cls="leaderboard-table"
-                ) if all_picks else "",
-                P("No picks yet for this tournament.") if not all_picks else "",
-                A("Make Picks", href="/picks", cls="btn btn-primary") if tournament.status == 'active' else "",
+                ) ] if all_picks else []),
+                *([ P("No picks yet for this tournament.") ] if not all_picks else []),
+                *([ A("Make Picks", href="/picks", cls="btn btn-primary") ] if tournament.status == 'active' else []),
             )
 
         # Calculate purse for header display
