@@ -2,6 +2,7 @@ services:
   - type: web
     name: golf-pickem
     runtime: python
+    branch: main
     buildCommand: pip install -r requirements.txt
     startCommand: python app.py
     envVars:
@@ -9,5 +10,53 @@ services:
         sync: false
       - key: SECRET_KEY
         sync: false
+      - key: PYTHON_VERSION
+        value: 3.11
+
+  - type: web
+    name: golf-pickem-dev
+    runtime: python
+    branch: dev
+    buildCommand: pip install -r requirements.txt
+    startCommand: python app.py
+    envVars:
+      - key: DATAGOLF_API_KEY
+        sync: false
+      - key: SECRET_KEY
+        sync: false
+      - key: DATABASE_URL
+        sync: false
+      - key: PYTHON_VERSION
+        value: 3.11
+
+  - type: worker
+    name: golf-pickem-etl
+    runtime: python
+    branch: main
+    buildCommand: pip install -r requirements.txt
+    startCommand: python etl/runner.py
+    envVars:
+      - key: DATAGOLF_API_KEY
+        sync: false
+      - key: DATABASE_URL
+        sync: false
+      - key: ETL_SYNC_INTERVAL_MINUTES
+        value: "10"
+      - key: PYTHON_VERSION
+        value: 3.11
+
+  - type: worker
+    name: golf-pickem-etl-dev
+    runtime: python
+    branch: dev
+    buildCommand: pip install -r requirements.txt
+    startCommand: python etl/runner.py
+    envVars:
+      - key: DATAGOLF_API_KEY
+        sync: false
+      - key: DATABASE_URL
+        sync: false
+      - key: ETL_SYNC_INTERVAL_MINUTES
+        value: "10"
       - key: PYTHON_VERSION
         value: 3.11

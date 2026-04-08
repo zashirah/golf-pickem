@@ -12,6 +12,9 @@ Golf Pick'em is a fantasy golf application where users pick one golfer from each
 # Development server
 python app.py                    # Runs on http://localhost:8000
 
+# ETL runner (standalone scheduled process)
+python etl/runner.py             # Activate/complete tournaments + live results sync
+
 # Docker
 docker-compose up                # Containerized development
 docker build -t golf-pickem .    # Build image
@@ -31,25 +34,65 @@ Routes are in `routes/` with each module exporting a `setup_*_routes(app)` funct
 - `routes/auth.py` - Login, register, logout
 - `routes/home.py` - Dashboard, static files
 - `routes/picks.py` - Pick management (view, edit, delete)
-- `routes/leaderboard.py` - Leaderboard display
-- `routes/admin.py` - Admin dashboard, DataGolf sync operations
+- `routes/leaderboard.py` - Tournament leaderboard display
+- `routes/season_leaderboard.py` - Season-wide standings aggregated across all tournaments
+- `routes/admin.py` - Admin dashboard; sync/field/status routes are thin wrappers delegating to `etl/`
 
 Route utilities are initialized via `init_routes(auth_service, db_module)` with dependency injection.
+
+**FastHTML/HTMX Pattern:**
+- Routes return FastHTML components (Div, Form, etc.) that render to HTML
+- HTMX attributes on elements enable dynamic updates without full page reloads
+- Forms use `hx-post`, `hx-target`, `hx-swap` for seamless interactions
+- No separate frontend framework - Python components generate interactive UI
+
+### ETL Layer
+All DataGolf data-sync logic lives in `etl/`. Each function accepts `db` (the db module) and a `DataGolfClient` instance.
+
+- `etl/golfers.py` - `sync_golfers(db, client)` — upsert golfers from rankings + player list
+- `etl/tournaments.py` - `sync_tournaments(db, client)` — upsert tournament schedule, preserve admin-set fields
+- `etl/results.py` - `sync_results(db, client, tournament)` — sync live stats → `tournament_result` table; raises `ValueError` on tournament name mismatch
+- `etl/field.py` - `auto_assign_field(db, client, tournament_id)` — fetch field, create missing golfers, assign tiers 1-4 by `dg_skill`
+- `etl/tournament_state.py` - `activate_tournaments(db)`, `complete_tournaments(db, client)`, `lock_picks(db)`, `send_final_leaderboard_groupme(db, tournament_id)`
+- `etl/runner.py` - Standalone scheduled process (`python etl/runner.py`); APScheduler with activate/complete/sync-results jobs
+
+**Admin routes delegate to ETL:**
+- `/admin/sync` → `sync_golfers` + `sync_tournaments`
+- `/admin/sync-results` → `sync_results`, then `scoring.calculate_standings`
+- `/admin/tournament/{tid}/field/auto` → `auto_assign_field`
+- `/admin/update-statuses` → `activate_tournaments` + `complete_tournaments`
+
+**ETL runner jobs (America/New_York):**
+- `activate_tournaments` — daily at 6 AM ET
+- `complete_tournaments` — every 2 hours on Sun/Mon ET
+- `sync_results` — every `ETL_SYNC_INTERVAL_MINUTES` minutes (default: 10)
 
 ### Database Layer
 - `db/__init__.py` - Database initialization using fastsql (MiniDataAPI spec), exposes table references as module-level variables (e.g., `db.users()`, `db.tournaments()`)
 - `db/models.py` - Dataclass models (User, Tournament, Pick, etc.) and `create_tables(db)` function
 - Uses fastsql with SQLAlchemy: SQLite locally, PostgreSQL in production
 - Tables auto-created on startup
+- `config.py` - Centralized configuration, loads environment variables via python-dotenv
 
 ### Services
 - `services/auth.py` - AuthService: session management, password hashing (SHA-256)
-- `services/scoring.py` - ScoringService: calculates best-2-of-4 standings
-- `services/datagolf.py` - DataGolf API client for tournaments, players, live scores
+- `services/scoring.py` - ScoringService: calculates best-2-of-4 standings (stays in web app, not ETL)
+- `services/datagolf.py` - DataGolf API client for tournaments, players, live scores (shared by web app and ETL)
 - `services/groupme.py` - GroupMeClient: bot messaging and group member verification
 
 ### Components
 - `components/layout.py` - `page_shell()`, `card()`, reusable UI components
+
+### Background Jobs
+- `jobs/tournament_jobs.py` - Thin APScheduler wrappers that call `etl/tournament_state.py` functions
+- Configured in `app.py` with America/New_York timezone (in-process scheduler, runs alongside web app)
+- **Active jobs:**
+  - `activate_tournaments_job` - Daily at 6 AM ET, activates tournaments on Tuesday of tournament week (start_date - 2 days)
+  - `complete_tournaments_job` - Every 2 hours on Sun/Mon ET, auto-completes tournaments when all players finish
+- **Disabled jobs:**
+  - `lock_picks_job` - Automatic pick locking is disabled, must be done manually via admin UI
+
+**Note:** `etl/runner.py` is a separate Render worker service that also runs these jobs independently of the web app.
 
 ## Key Data Flow
 
@@ -62,6 +105,12 @@ Route utilities are initialized via `init_routes(auth_service, db_module)` with 
 - Best 2 scores (lowest score-to-par) count
 - Entries with <2 valid picks show as "DQ"
 
+**Season leaderboard:**
+- Aggregates standings across all completed tournaments in a season
+- Calculated on-the-fly using SQL WITH clause (no materialized view)
+- Tracks: total score, wins, top-3 finishes, average finish, total winnings
+- Accessible at `/season-leaderboard` or `/season-leaderboard/{year}`
+
 ## Database Tables
 
 | Table | Purpose |
@@ -73,20 +122,25 @@ Route utilities are initialized via `init_routes(auth_service, db_module)` with 
 | `tournament_field` | Golfer + tier assignments per tournament |
 | `picks` | User picks (supports multiple entries via `entry_number`) |
 | `tournament_results` | Live scores (score_to_par, position, thru, status) |
-| `pickem_standings` | Calculated leaderboard positions |
+| `pickem_standings` | Calculated leaderboard positions (note: `tier*_position` columns store scores, not positions - tech debt) |
 | `app_settings` | Key-value store for runtime configuration (e.g., `groupme_bot_id`) |
+
+**Note:** There is no separate `season_standings` table - season data is computed dynamically from `pickem_standings` and `tournaments` tables.
 
 ## Environment Variables
 
 | Variable | Required | Description |
 |----------|----------|-------------|
 | `DATAGOLF_API_KEY` | Yes | DataGolf API key |
-| `SECRET_KEY` | Yes | Session encryption secret |
+| `SECRET_KEY` | Yes | Session encryption secret (use `openssl rand -hex 32` to generate) |
 | `DATABASE_URL` | No | SQLAlchemy connection string. Default: `sqlite:///data/golf_pickem.db`. For PostgreSQL: `postgresql://user:pass@host:5432/dbname` (URL-encode special chars in password) |
 | `PORT` | No | Server port (default: 8000) |
-| `GROUPME_BOT_ID` | No | GroupMe bot ID for sending messages (optional, can also be set via admin UI) |
+| `ETL_SYNC_INTERVAL_MINUTES` | No | How often `etl/runner.py` syncs live results (default: 10) |
+| `GROUPME_BOT_ID` | No | GroupMe bot ID for sending messages (optional, can also be set via admin UI in `app_settings` table) |
 | `GROUPME_ACCESS_TOKEN` | No | GroupMe API access token for member verification during registration |
 | `GROUPME_GROUP_ID` | No | GroupMe group ID to verify membership |
+
+All environment variables are loaded via `config.py` using python-dotenv. Create a `.env` file in project root for local development.
 
 ## Deployment Notes
 
@@ -194,5 +248,7 @@ Track tournament entry prices and calculate total purse for payouts.
 ## Known Tech Debt
 
 - Column naming: `tier*_position` in `pickem_standings` stores scores, not positions
-- No migration system for schema changes
+- No migration system for schema changes (tables auto-created on startup)
 - No test suite
+- Automatic pick locking disabled - must be done manually via admin UI
+- Season leaderboard computed on-the-fly with complex SQL - could benefit from materialized view or caching for performance

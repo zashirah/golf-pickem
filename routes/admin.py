@@ -7,7 +7,6 @@ from starlette.responses import RedirectResponse
 
 from components.layout import page_shell, card
 from routes.utils import get_current_user, get_db, get_auth_service
-from config import DATABASE_URL
 
 logger = logging.getLogger(__name__)
 
@@ -28,36 +27,6 @@ def _mask_bot_id(bot_id: str) -> str:
         return "****"
     return f"{bot_id[:4]}...{bot_id[-4:]}"
 
-
-def _normalize_tournament_name(name: str) -> str:
-    """Normalize tournament name for comparison."""
-    if not name:
-        return ""
-    # Lowercase and remove common variations
-    normalized = name.lower().strip()
-    # Remove "the " prefix
-    if normalized.startswith("the "):
-        normalized = normalized[4:]
-    # Remove common suffixes/variations
-    for suffix in [" presented by mastercard", " pga tour"]:
-        normalized = normalized.replace(suffix, "")
-    return normalized
-
-
-def _tournament_names_match(db_name: str, api_name: str) -> bool:
-    """Check if tournament names match (fuzzy comparison)."""
-    norm_db = _normalize_tournament_name(db_name)
-    norm_api = _normalize_tournament_name(api_name)
-
-    # Exact match after normalization
-    if norm_db == norm_api:
-        return True
-
-    # Check if one contains the other (for partial matches)
-    if norm_db in norm_api or norm_api in norm_db:
-        return True
-
-    return False
 
 
 def filter_and_sort_tournaments(tournaments, tab='active'):
@@ -391,60 +360,17 @@ def setup_admin_routes(app):
             return RedirectResponse("/", status_code=303)
 
         from services.datagolf import DataGolfClient
-        from datetime import datetime, timedelta
+        from etl.tournament_state import activate_tournaments, complete_tournaments
 
         client = DataGolfClient()
-        now = datetime.now()
-        
+
         try:
-            # Get current field updates to check tournament status
-            field_data = client.get_field_updates()
-            current_event_name = field_data.get('event_name', '')
-            current_round = field_data.get('current_round')
-            
-            logger.info(f"Current DataGolf event: {current_event_name}, round: {current_round}")
-            
-            for tournament in db_module.tournaments():
-                if not tournament.start_date:
-                    continue
-                
-                # Parse start date
-                try:
-                    start_date = datetime.fromisoformat(tournament.start_date.replace('Z', '+00:00'))
-                except:
-                    start_date = datetime.fromisoformat(tournament.start_date)
-                
-                # Get Tuesday of tournament week (tournament usually Thu-Sun)
-                # If start_date is Thursday, Tuesday is 2 days before
-                tuesday_of_week = start_date - timedelta(days=2)
-                
-                # Tournament should be active starting Tuesday of tournament week
-                if now >= tuesday_of_week and tournament.status == 'upcoming':
-                    logger.info(f"Setting {tournament.name} to active (today >= {tuesday_of_week.date()})")
-                    db_module.tournaments.update(id=tournament.id, status='active')
-                
-                # Check if this is the current tournament on DataGolf
-                if tournament.datagolf_name and tournament.datagolf_name == current_event_name:
-                    # If round 4 is complete or past, mark as completed
-                    if current_round and current_round >= 5:  # Round 5 means tournament is over
-                        if tournament.status != 'completed':
-                            logger.info(f"Setting {tournament.name} to completed (round {current_round})")
-                            db_module.tournaments.update(id=tournament.id, status='completed')
-                            # Auto-send final leaderboard to GroupMe
-                            _send_final_leaderboard_groupme(db_module, tournament.id)
-                    
-                    # Lock picks at first tee time (when tournament becomes active and it's tournament day)
-                    if tournament.status == 'active' and not tournament.picks_locked:
-                        # Check if we're on or after tournament start day
-                        if now.date() >= start_date.date():
-                            logger.info(f"Locking picks for {tournament.name} (tournament started)")
-                            db_module.tournaments.update(id=tournament.id, picks_locked=True)
-            
+            activate_tournaments(db_module)
+            complete_tournaments(db_module, client)
             logger.info("Tournament status update complete")
-            
         except Exception as e:
             logger.error(f"Error updating tournament statuses: {e}", exc_info=True)
-        
+
         return RedirectResponse("/admin", status_code=303)
 
     @app.post("/admin/toggle-lock")
@@ -548,12 +474,11 @@ def setup_admin_routes(app):
 
         from services.datagolf import DataGolfClient
         from services.scoring import ScoringService
-        from sqlalchemy import text
+        from etl.results import sync_results as etl_sync_results
 
         client = DataGolfClient()
         scoring = ScoringService(db_module)
 
-        # Get the tournament we're trying to sync
         tournament = None
         for t in db_module.tournaments():
             if t.id == tournament_id:
@@ -564,101 +489,13 @@ def setup_admin_routes(app):
             return RedirectResponse("/admin?error=Tournament+not+found", status_code=303)
 
         try:
-            # Fetch live stats
-            live_data = client.get_live_stats()
-
-            # Validate that the API is returning data for the correct tournament
-            api_event_name = live_data.get('event_name', '')
-            if not _tournament_names_match(tournament.name, api_event_name):
-                error_msg = f"Tournament mismatch: DataGolf is returning data for '{api_event_name}', not '{tournament.name}'. Sync cancelled."
-                logger.warning(error_msg)
-                return RedirectResponse(f"/admin?error=Tournament+mismatch:+API+returning+{api_event_name.replace(' ', '+')}", status_code=303)
-
-            live_stats = live_data.get('live_stats', [])
-
-            # Get golfer lookup
-            golfers_by_dg_id = {g.datagolf_id: g for g in db_module.golfers()}
-
-            # Build batch data for results
-            now = datetime.now().isoformat()
-            results_data = []
-            
-            for player in live_stats:
-                dg_id = str(player.get('dg_id', ''))
-                golfer = golfers_by_dg_id.get(dg_id)
-
-                if not golfer:
-                    continue
-
-                # Parse position (could be "1", "T5", "CUT", etc.)
-                pos_str = player.get('position', '')
-                position = None
-                status = 'active'
-
-                if pos_str:
-                    pos_clean = pos_str.replace('T', '').strip()
-                    if pos_clean.isdigit():
-                        position = int(pos_clean)
-                    elif pos_str.upper() in ('CUT', 'MC'):
-                        status = 'cut'
-                    elif pos_str.upper() in ('WD', 'W/D'):
-                        status = 'wd'
-                    elif pos_str.upper() == 'DQ':
-                        status = 'dq'
-
-                score_to_par = player.get('total')
-                thru = player.get('thru')
-                round_num = player.get('round')
-                
-                results_data.append({
-                    'tournament_id': tournament_id,
-                    'golfer_id': golfer.id,
-                    'position': position,
-                    'score_to_par': score_to_par,
-                    'status': status,
-                    'round_num': round_num,
-                    'thru': thru,
-                    'updated_at': now
-                })
-
-            # Batch upsert results using raw SQL
-            if results_data:
-                logger.info(f"Batch upserting {len(results_data)} tournament results...")
-                with db_module.db.engine.connect() as conn:
-                    # Delete existing results for this tournament first
-                    conn.execute(text("DELETE FROM tournament_result WHERE tournament_id = :tid"), 
-                                {"tid": tournament_id})
-                    
-                    # Build batch INSERT
-                    values_list = []
-                    params = {}
-                    for i, r in enumerate(results_data):
-                        values_list.append(f"(:tid_{i}, :gid_{i}, :pos_{i}, :score_{i}, :status_{i}, :round_{i}, :thru_{i}, :updated_{i})")
-                        params[f"tid_{i}"] = r['tournament_id']
-                        params[f"gid_{i}"] = r['golfer_id']
-                        params[f"pos_{i}"] = r['position']
-                        params[f"score_{i}"] = r['score_to_par']
-                        params[f"status_{i}"] = r['status']
-                        params[f"round_{i}"] = r['round_num']
-                        params[f"thru_{i}"] = r['thru']
-                        params[f"updated_{i}"] = r['updated_at']
-                    
-                    sql = f"""
-                        INSERT INTO tournament_result 
-                        (tournament_id, golfer_id, position, score_to_par, status, round_num, thru, updated_at)
-                        VALUES {', '.join(values_list)}
-                    """
-                    conn.execute(text(sql), params)
-                    conn.commit()
-                
-                logger.info(f"Synced {len(results_data)} results for tournament {tournament_id}")
-
-            # Update tournament last_synced_at timestamp
-            db_module.tournaments.update(id=tournament_id, last_synced_at=now)
-
-            # Calculate standings
+            result = etl_sync_results(db_module, client, tournament)
             scoring.calculate_standings(tournament_id)
-
+            logger.info(f"Synced {result['result_count']} results for tournament {tournament_id}")
+        except ValueError as e:
+            logger.warning(str(e))
+            error_param = str(e).replace(' ', '+').replace("'", '')
+            return RedirectResponse(f"/admin?error={error_param}", status_code=303)
         except Exception as e:
             logger.error(f"Sync results error: {e}", exc_info=True)
 
@@ -672,134 +509,18 @@ def setup_admin_routes(app):
             return RedirectResponse("/", status_code=303)
 
         from services.datagolf import DataGolfClient
-        from sqlalchemy import text
+        from etl.golfers import sync_golfers
+        from etl.tournaments import sync_tournaments
 
         client = DataGolfClient()
 
         try:
-            # Sync players - top 400 to cover full tournament fields
-            logger.info("Starting DataGolf sync - fetching rankings...")
-            rankings = client.get_rankings()[:400]  # Top 400 covers most tournament fields
-            logger.info(f"Fetched {len(rankings)} rankings from DataGolf")
-            
-            # Get player list to lookup names/countries
-            players = client.get_player_list()
-            logger.info(f"Fetched {len(players)} players from DataGolf")
-            
-            # Create player info lookup by dg_id
-            player_info = {}
-            for p in players:
-                dg_id = str(p.get('dg_id', ''))
-                player_info[dg_id] = {
-                    'name': p.get('player_name', ''),
-                    'country': p.get('country', '')
-                }
-
-            # Build VALUES clause for single batch INSERT
-            now = datetime.now().isoformat()
-            values_list = []
-            params = {}
-            for i, r in enumerate(rankings):
-                dg_id = str(r.get('dg_id', ''))
-                skill = r.get('dg_skill_estimate', 0)
-                info = player_info.get(dg_id, {})
-                name = info.get('name', r.get('player_name', ''))
-                country = info.get('country', '')
-                
-                values_list.append(f"(:dg_id_{i}, :name_{i}, :country_{i}, :skill_{i}, :updated_at_{i})")
-                params[f"dg_id_{i}"] = dg_id
-                params[f"name_{i}"] = name
-                params[f"country_{i}"] = country
-                params[f"skill_{i}"] = skill
-                params[f"updated_at_{i}"] = now
-            
-            # Batch upsert golfers with UNIQUE constraint on datagolf_id
-            logger.info(f"Batch upserting {len(values_list)} golfers...")
-            with db_module.db.engine.connect() as conn:
-                if DATABASE_URL.startswith("postgresql"):
-                    # PostgreSQL: use ON CONFLICT for upsert
-                    sql = f"""
-                        INSERT INTO golfer (datagolf_id, name, country, dg_skill, updated_at)
-                        VALUES {', '.join(values_list)}
-                        ON CONFLICT (datagolf_id) DO UPDATE SET
-                            name = EXCLUDED.name,
-                            country = EXCLUDED.country,
-                            dg_skill = EXCLUDED.dg_skill,
-                            updated_at = EXCLUDED.updated_at
-                    """
-                    conn.execute(text(sql), params)
-                else:
-                    # SQLite with UNIQUE index on datagolf_id: use INSERT OR REPLACE
-                    # This will update existing golfers or insert new ones
-                    sql = f"""
-                        INSERT OR REPLACE INTO golfer (datagolf_id, name, country, dg_skill, updated_at)
-                        VALUES {', '.join(values_list)}
-                    """
-                    conn.execute(text(sql), params)
-
-                conn.commit()
-            
-            logger.info(f"Synced {len(rankings)} ranked players to database")
-
-            # Sync schedule - all tournaments from current season
-            logger.info("Fetching tournament schedule...")
-            schedule = client.get_schedule()
-            logger.info(f"Fetched {len(schedule)} tournaments from schedule")
-
-            # Build batch insert for tournaments too
-            tournament_values = []
-            tournament_params = {}
-            for i, event in enumerate(schedule):
-                event_id = str(event.get('event_id', ''))
-                name = event.get('event_name', '')
-                start = event.get('start_date', '')
-                
-                tournament_values.append(f"(:event_id_{i}, :dg_name_{i}, :name_{i}, :start_{i}, 'upcoming', :created_at_{i})")
-                tournament_params[f"event_id_{i}"] = event_id
-                tournament_params[f"dg_name_{i}"] = name  # Store exact DataGolf name for matching
-                tournament_params[f"name_{i}"] = name
-                tournament_params[f"start_{i}"] = start
-                tournament_params[f"created_at_{i}"] = now
-            
-            if tournament_values:
-                with db_module.db.engine.connect() as conn:
-                    if DATABASE_URL.startswith("postgresql"):
-                        # PostgreSQL: use ON CONFLICT for upsert
-                        # Only update name/dates, preserve admin-set status/locks
-                        sql = f"""
-                            INSERT INTO tournament (datagolf_id, datagolf_name, name, start_date, status, created_at)
-                            VALUES {', '.join(tournament_values)}
-                            ON CONFLICT (datagolf_id) DO UPDATE SET
-                                datagolf_name = EXCLUDED.datagolf_name,
-                                name = EXCLUDED.name,
-                                start_date = EXCLUDED.start_date
-                        """
-                        conn.execute(text(sql), tournament_params)
-                    else:
-                        # SQLite: More careful upsert - preserve admin-set fields
-                        # First, insert new tournaments (those that don't exist yet)
-                        insert_sql = f"""
-                            INSERT OR IGNORE INTO tournament (datagolf_id, datagolf_name, name, start_date, status, created_at)
-                            VALUES {', '.join(tournament_values)}
-                        """
-                        conn.execute(text(insert_sql), tournament_params)
-
-                        # Then update existing tournaments - only update name/dates, not status
-                        for i, event in enumerate(schedule):
-                            event_id = str(event.get('event_id', ''))
-                            name = event.get('event_name', '')
-                            start = event.get('start_date', '')
-                            update_sql = """
-                                UPDATE tournament
-                                SET datagolf_name = ?, name = ?, start_date = ?
-                                WHERE datagolf_id = ?
-                            """
-                            conn.execute(text(update_sql), [name, name, start, event_id])
-
-                    conn.commit()
-            
-            logger.info(f"Sync complete: {len(rankings)} players, {len(schedule)} tournaments")
-
+            golfer_result = sync_golfers(db_module, client)
+            tournament_result = sync_tournaments(db_module, client)
+            logger.info(
+                f"Sync complete: {golfer_result['golfer_count']} players, "
+                f"{tournament_result['tournament_count']} tournaments"
+            )
         except Exception as e:
             logger.error(f"Sync error: {e}", exc_info=True)
 
@@ -1037,134 +758,19 @@ def setup_admin_routes(app):
             return RedirectResponse("/", status_code=303)
 
         from services.datagolf import DataGolfClient
-        from sqlalchemy import text
-
-        tournament = None
-        for t in db_module.tournaments():
-            if t.id == tid:
-                tournament = t
-                break
-
-        if not tournament:
-            return RedirectResponse("/admin", status_code=303)
+        from etl.field import auto_assign_field
 
         client = DataGolfClient()
 
         try:
-            # Get current field from DataGolf
-            field_data = client.get_field_updates()
-            dg_event_name = field_data.get('event_name', '')
-            field_players = field_data.get('field', [])
-
-            # Validate tournament matches DataGolf event
-            if not tournament.datagolf_name or tournament.datagolf_name != dg_event_name:
-                logger.warning(f"Tournament mismatch: DB='{tournament.datagolf_name}' vs DataGolf='{dg_event_name}'")
-                return RedirectResponse(f"/admin/tournament/{tid}/field?error=mismatch", status_code=303)
-
-            # Get all golfers from DB
-            golfers_by_dg_id = {g.datagolf_id: g for g in db_module.golfers()}
-
-            # Find golfers to create (not in DB)
-            golfers_to_create = []
-            for p in field_players:
-                dg_id = str(p.get('dg_id', ''))
-                if dg_id and dg_id not in golfers_by_dg_id:
-                    golfers_to_create.append(p)
-
-            # Batch create missing golfers
-            if golfers_to_create:
-                now = datetime.now().isoformat()
-                values_list = []
-                params = {}
-                for i, p in enumerate(golfers_to_create):
-                    dg_id = str(p.get('dg_id', ''))
-                    # Parse name from "Last, First" format
-                    raw_name = p.get('player_name', '')
-                    if ', ' in raw_name:
-                        last, first = raw_name.split(', ', 1)
-                        name = f"{first} {last}"
-                    else:
-                        name = raw_name
-                    country = p.get('country', '')
-                    
-                    values_list.append(f"(:dg_id_{i}, :name_{i}, :country_{i}, :updated_at_{i})")
-                    params[f"dg_id_{i}"] = dg_id
-                    params[f"name_{i}"] = name
-                    params[f"country_{i}"] = country
-                    params[f"updated_at_{i}"] = now
-                
-                logger.info(f"Creating {len(golfers_to_create)} missing golfers from field...")
-                with db_module.db.engine.connect() as conn:
-                    sql = f"""
-                        INSERT INTO golfer (datagolf_id, name, country, updated_at)
-                        VALUES {', '.join(values_list)}
-                        ON CONFLICT (datagolf_id) DO NOTHING
-                    """
-                    conn.execute(text(sql), params)
-                    conn.commit()
-                
-                # Refresh golfer lookup after creating new ones
-                golfers_by_dg_id = {g.datagolf_id: g for g in db_module.golfers()}
-                logger.info(f"Created {len(golfers_to_create)} golfers")
-
-            # Build field list with all matching golfers
-            field_with_skill = []
-            matched_count = 0
-            skipped_count = 0
-            for p in field_players:
-                dg_id = str(p.get('dg_id', ''))
-                golfer = golfers_by_dg_id.get(dg_id)
-                if golfer:
-                    field_with_skill.append(golfer)
-                    matched_count += 1
-                else:
-                    skipped_count += 1
-                    logger.warning(f"Skipped golfer not in DB: {p.get('player_name', 'Unknown')} (dg_id: {dg_id})")
-
-            logger.info(f"Field matching: {matched_count} matched, {skipped_count} skipped, {len(golfers_to_create)} created")
-
-            field_with_skill.sort(key=lambda g: g.dg_skill or 0, reverse=True)
-
-            # Build batch data: Top 6 = Tier 1, next 18 = Tier 2, next 36 = Tier 3, rest = Tier 4
-            now = datetime.now().isoformat()
-            field_data_list = []
-            for i, golfer in enumerate(field_with_skill):
-                if i < 6:
-                    tier = 1
-                elif i < 24:  # 6 + 18
-                    tier = 2
-                elif i < 60:  # 24 + 36
-                    tier = 3
-                else:
-                    tier = 4
-                field_data_list.append((tid, golfer.id, tier, now))
-
-            # Batch operation: delete old, insert new
-            logger.info(f"Batch assigning {len(field_data_list)} golfers to tiers for tournament {tid}...")
-            with db_module.db.engine.connect() as conn:
-                # Delete existing field for this tournament
-                conn.execute(text("DELETE FROM tournament_field WHERE tournament_id = :tid"), {"tid": tid})
-                
-                # Build batch INSERT
-                if field_data_list:
-                    values_list = []
-                    params = {}
-                    for i, (t_id, g_id, tier, created) in enumerate(field_data_list):
-                        values_list.append(f"(:tid_{i}, :gid_{i}, :tier_{i}, :created_{i})")
-                        params[f"tid_{i}"] = t_id
-                        params[f"gid_{i}"] = g_id
-                        params[f"tier_{i}"] = tier
-                        params[f"created_{i}"] = created
-                    
-                    sql = f"""
-                        INSERT INTO tournament_field (tournament_id, golfer_id, tier, created_at)
-                        VALUES {', '.join(values_list)}
-                    """
-                    conn.execute(text(sql), params)
-                conn.commit()
-            
-            logger.info(f"Assigned {len(field_data_list)} golfers to tiers")
-
+            result = auto_assign_field(db_module, client, tid)
+            logger.info(
+                f"Auto-assigned {result['assigned_count']} golfers "
+                f"({result['created_count']} created) for tournament {tid}"
+            )
+        except ValueError as e:
+            logger.warning(f"Auto-assign field error: {e}")
+            return RedirectResponse(f"/admin/tournament/{tid}/field?error=mismatch", status_code=303)
         except Exception as e:
             logger.error(f"Auto-assign error: {e}", exc_info=True)
 
@@ -1354,55 +960,5 @@ def setup_admin_routes(app):
 
 def _send_final_leaderboard_groupme(db_module, tournament_id):
     """Send final leaderboard to GroupMe when tournament completes."""
-    try:
-        from services.groupme import GroupMeClient
-        from routes.utils import calculate_tournament_purse, format_score
-
-        # Get tournament
-        tournament = None
-        for t in db_module.tournaments():
-            if t.id == tournament_id:
-                tournament = t
-                break
-
-        if not tournament:
-            return
-
-        # Get standings
-        all_picks = [p for p in db_module.picks() if p.tournament_id == tournament_id]
-        standings = [s for s in db_module.pickem_standings() if s.tournament_id == tournament_id]
-        standings.sort(key=lambda s: s.rank if s.rank else 999)
-
-        users_by_id = {u.id: u for u in db_module.users()}
-
-        # Build message
-        purse = calculate_tournament_purse(tournament, all_picks)
-
-        message_lines = [f"🏁 FINAL LEADERBOARD: {tournament.name}"]
-        if purse:
-            message_lines.append(f"💰 Purse: ${purse}")
-        message_lines.append("")
-
-        # Add top 10 standings
-        for i, standing in enumerate(standings[:10]):
-            if i >= 10:
-                break
-            user = users_by_id.get(standing.user_id)
-            player_name = user.display_name if user else f"User {standing.user_id}"
-            rank = standing.rank if standing.rank else (i + 1)
-            score = standing.best_two_total if standing.best_two_total is not None else "DQ"
-
-            # Format score
-            score_str = format_score(score) if isinstance(score, int) else str(score)
-
-            message_lines.append(f"{rank}. {player_name} - {score_str}")
-
-        message = "\n".join(message_lines)
-
-        # Send message (GroupMeClient will check app_settings and env var for bot_id)
-        client = GroupMeClient(db_module=db_module)
-        client.send_message(message)
-        logger.info(f"Sent final leaderboard for {tournament.name} to GroupMe")
-
-    except Exception as e:
-        logger.error(f"Failed to send final leaderboard to GroupMe: {e}", exc_info=True)
+    from etl.tournament_state import send_final_leaderboard_groupme
+    send_final_leaderboard_groupme(db_module, tournament_id)
