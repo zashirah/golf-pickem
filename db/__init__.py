@@ -3,7 +3,7 @@ from fastsql import Database
 from config import DATA_DIR, DATABASE_URL
 import logging
 import sqlalchemy as sa
-from sqlalchemy.exc import OperationalError, DBAPIError, PendingRollbackError
+from sqlalchemy.exc import OperationalError, DBAPIError, PendingRollbackError, ResourceClosedError
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +28,7 @@ class ResilientConnection:
         """Execute with automatic retry on connection errors."""
         try:
             return self._conn.execute(*args, **kwargs)
-        except (OperationalError, DBAPIError, PendingRollbackError) as e:
+        except (OperationalError, DBAPIError, PendingRollbackError, ResourceClosedError) as e:
             logger.warning(f"Database error: {e}, attempting reconnect...")
             try:
                 self._conn.rollback()
