@@ -47,8 +47,8 @@ def _build_tournament_leaderboard(db, tournament, results, golfers_by_id):
         results.values(),
         key=lambda r: (
             r.position is None,  # None positions at bottom
-            r.position or 999,   # Sort by position
-            r.score_to_par or 999  # Then by score
+            r.position if r.position is not None else 999,
+            r.score_to_par if r.score_to_par is not None else 999
         )
     )
     
@@ -193,7 +193,7 @@ def setup_leaderboard_routes(app):
         # Get tournaments that can be viewed (active or completed)
         all_tournaments = list(db.tournaments())
         viewable = [t for t in all_tournaments if t.status in ('active', 'completed')]
-        viewable.sort(key=lambda t: (t.status != 'active', t.start_date or ''), reverse=True)
+        viewable.sort(key=lambda t: (t.status == 'active', t.start_date or ''), reverse=True)
 
         if not viewable:
             return page_shell(
@@ -455,7 +455,7 @@ def setup_leaderboard_routes(app):
             else:
                 total_display = format_score(total)
 
-            rank_display = str(standing.rank) if standing and standing.rank else "-"
+            rank_display = str(rank) if rank is not None else "-"
             is_current = u and u.id == user.id
 
             # Table row
@@ -470,16 +470,50 @@ def setup_leaderboard_routes(app):
                 cls=f"{'current-user' if is_current else ''}"
             )
 
-        # Sort by standings if available, otherwise just show picks
-        # DQ entries (None rank) sort to bottom
+        # Sort by standings data and compute fresh ranks (avoids relying on stale DB ranks)
+        def _standing_sort_key(p):
+            entry_num = getattr(p, 'entry_number', 1) or 1
+            s = standings_by_key.get((p.user_id, entry_num))
+            if s is None or s.best_two_total is None:
+                return (True, float('inf'), True, float('inf'), True, float('inf'))
+            total = s.best_two_total
+            has_third = getattr(s, 'has_third_made_cut', False) or False
+            third_score = s.third_best_score if has_third else float('inf')
+            if third_score is None:
+                third_score = float('inf')
+            has_fourth = getattr(s, 'has_fourth_made_cut', False) or False
+            fourth_score = s.fourth_best_score if has_fourth else float('inf')
+            if fourth_score is None:
+                fourth_score = float('inf')
+            return (False, total, not has_third, third_score, not has_fourth, fourth_score)
+
         if standings:
-            def get_sort_key(p):
-                entry_num = getattr(p, 'entry_number', 1) or 1
-                s = standings_by_key.get((p.user_id, entry_num))
-                if s and s.rank is not None:
-                    return (False, s.rank)
-                return (True, 999)  # DQ entries go last
-            all_picks.sort(key=get_sort_key)
+            all_picks.sort(key=_standing_sort_key)
+
+        # Compute display ranks with tie-handling
+        _display_ranks = {}
+        _current_rank = 1
+        _prev_tie_key = None
+        for _i, _pick in enumerate(all_picks):
+            _entry_num = getattr(_pick, 'entry_number', 1) or 1
+            _s = standings_by_key.get((_pick.user_id, _entry_num))
+            if _s and _s.best_two_total is not None:
+                _has_third = getattr(_s, 'has_third_made_cut', False) or False
+                _has_fourth = getattr(_s, 'has_fourth_made_cut', False) or False
+                _tie_key = (
+                    _s.best_two_total,
+                    _has_third,
+                    _s.third_best_score if _has_third else None,
+                    _has_fourth,
+                    _s.fourth_best_score if _has_fourth else None,
+                )
+                if _prev_tie_key is None or _tie_key != _prev_tie_key:
+                    _current_rank = _i + 1
+                _display_ranks[(_pick.user_id, _entry_num)] = _current_rank
+                _prev_tie_key = _tie_key
+            else:
+                _display_ranks[(_pick.user_id, _entry_num)] = None  # DQ
+                _prev_tie_key = None
 
         # Status indicator
         status_badge_list = []
@@ -528,9 +562,12 @@ def setup_leaderboard_routes(app):
                 style="display:inline; margin-left: 0.5rem;"
             )
 
-        # Build rows
+        # Build rows with fresh computed ranks
         if all_picks:
-            desktop_rows = [pick_row(p, i+1) for i, p in enumerate(all_picks)]
+            desktop_rows = [
+                pick_row(p, _display_ranks.get((getattr(p, 'user_id'), getattr(p, 'entry_number', 1) or 1)))
+                for p in all_picks
+            ]
         else:
             desktop_rows = []
 
