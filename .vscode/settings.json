@@ -1,0 +1,16 @@
+{
+  "github.copilot.chat.mcp.enabled": true,
+  "github.copilot.chat.mcp.servers": {
+    "supabase": {
+      "type": "http",
+      "url": "https://mcp.supabase.com/mcp?project_ref=tnclrnoelezwnumypwzr"
+    },
+    "render": {
+      "type": "http",
+      "url": "https://mcp.render.com/mcp",
+      "headers": {
+        "Authorization": "Bearer rnd_huEKwFzBNBWHp5SzRWRBZL82AiFd"
+      }
+    }
+  }
+}
