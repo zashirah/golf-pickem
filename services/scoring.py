@@ -1,5 +1,6 @@
 """Scoring service - Calculate pick'em standings."""
 from datetime import datetime
+from sqlalchemy import text
 
 
 class ScoringService:
@@ -120,6 +121,7 @@ class ScoringService:
         current_rank = 1
         prev_key = None
 
+        now = datetime.now().isoformat()
         for i, s in enumerate(standings):
             # Comparison key (same as sort key components, but without is_dq)
             current_key = (
@@ -137,45 +139,44 @@ class ScoringService:
             s['rank'] = current_rank
             prev_key = current_key
 
-            # Upsert to database - keyed by (tournament_id, user_id, entry_number)
-            # Note: We're storing scores in the "position" columns for now
-            existing = [ps for ps in self.db.pickem_standings()
-                        if ps.tournament_id == tournament_id
-                        and ps.user_id == s['user_id']
-                        and (getattr(ps, 'entry_number', 1) or 1) == s['entry_number']]
+        # Delete all existing standings for this tournament and bulk insert fresh ones.
+        # This avoids stale duplicate rows that cause the leaderboard to show wrong scores
+        # when the upsert-by-first-record pattern skips over extra copies.
+        with self.db.db.engine.connect() as conn:
+            conn.execute(text("DELETE FROM pickem_standing WHERE tournament_id = :tid"),
+                         {"tid": tournament_id})
 
-            if existing:
-                self.db.pickem_standings.update(
-                    id=existing[0].id,
-                    entry_number=s['entry_number'],
-                    tier1_position=s['tier1_score'],
-                    tier2_position=s['tier2_score'],
-                    tier3_position=s['tier3_score'],
-                    tier4_position=s['tier4_score'],
-                    best_two_total=s['best_two_total'],
-                    rank=s['rank'],
-                    third_best_score=s['third_best_score'],
-                    has_third_made_cut=s['has_third_made_cut'],
-                    fourth_best_score=s['fourth_best_score'],
-                    has_fourth_made_cut=s['has_fourth_made_cut'],
-                    updated_at=datetime.now().isoformat()
-                )
-            else:
-                self.db.pickem_standings.insert(
-                    tournament_id=tournament_id,
-                    user_id=s['user_id'],
-                    entry_number=s['entry_number'],
-                    tier1_position=s['tier1_score'],
-                    tier2_position=s['tier2_score'],
-                    tier3_position=s['tier3_score'],
-                    tier4_position=s['tier4_score'],
-                    best_two_total=s['best_two_total'],
-                    rank=s['rank'],
-                    third_best_score=s['third_best_score'],
-                    has_third_made_cut=s['has_third_made_cut'],
-                    fourth_best_score=s['fourth_best_score'],
-                    has_fourth_made_cut=s['has_fourth_made_cut'],
-                    updated_at=datetime.now().isoformat()
-                )
+            if standings:
+                values_list = []
+                params = {}
+                for i, s in enumerate(standings):
+                    values_list.append(
+                        f"(:tid_{i}, :uid_{i}, :en_{i}, :t1_{i}, :t2_{i}, :t3_{i}, :t4_{i}, "
+                        f":bt_{i}, :rank_{i}, :t3s_{i}, :h3_{i}, :t4s_{i}, :h4_{i}, :ua_{i})"
+                    )
+                    params.update({
+                        f"tid_{i}": tournament_id,
+                        f"uid_{i}": s['user_id'],
+                        f"en_{i}": s['entry_number'],
+                        f"t1_{i}": s['tier1_score'],
+                        f"t2_{i}": s['tier2_score'],
+                        f"t3_{i}": s['tier3_score'],
+                        f"t4_{i}": s['tier4_score'],
+                        f"bt_{i}": s['best_two_total'],
+                        f"rank_{i}": s['rank'],
+                        f"t3s_{i}": s['third_best_score'],
+                        f"h3_{i}": s['has_third_made_cut'],
+                        f"t4s_{i}": s['fourth_best_score'],
+                        f"h4_{i}": s['has_fourth_made_cut'],
+                        f"ua_{i}": now,
+                    })
+                conn.execute(text(
+                    "INSERT INTO pickem_standing "
+                    "(tournament_id, user_id, entry_number, tier1_position, tier2_position, "
+                    "tier3_position, tier4_position, best_two_total, rank, third_best_score, "
+                    "has_third_made_cut, fourth_best_score, has_fourth_made_cut, updated_at) "
+                    f"VALUES {', '.join(values_list)}"
+                ), params)
+            conn.commit()
 
         return standings
