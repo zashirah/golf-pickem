@@ -958,6 +958,99 @@ def setup_admin_routes(app):
             return RedirectResponse("/admin?error=Error sending test message", status_code=303)
 
 
+    @app.get("/admin/picks-debug")
+    def picks_debug(request, tournament_id: int = None):
+        """Diagnostic: show pick golfer IDs vs tournament_result scores to find mismatches."""
+        db = get_db()
+        user = get_current_user(request)
+        if not user or not user.is_admin:
+            return RedirectResponse("/", status_code=303)
+
+        tournaments = [t for t in db.tournaments() if t.status in ('active', 'completed')]
+        tournaments.sort(key=lambda t: t.start_date or '', reverse=True)
+        if not tournaments:
+            return page_shell("Picks Debug", P("No tournaments."), user=user)
+
+        tournament = next((t for t in tournaments if t.id == tournament_id), tournaments[0])
+
+        golfers_by_id = {g.id: g for g in db.golfers()}
+        users_by_id = {u.id: u for u in db.users()}
+        results_by_golfer = {r.golfer_id: r for r in db.tournament_results() if r.tournament_id == tournament.id}
+        picks = [p for p in db.picks() if p.tournament_id == tournament.id]
+
+        # Find duplicate golfer names
+        from collections import defaultdict
+        name_to_ids = defaultdict(list)
+        for g in db.golfers():
+            name_to_ids[g.name].append(g.id)
+        dupes = {name: ids for name, ids in name_to_ids.items() if len(ids) > 1}
+
+        rows = []
+        for pick in sorted(picks, key=lambda p: (users_by_id.get(p.user_id, type('', (), {'username': ''})()).username, getattr(p, 'entry_number', 1) or 1)):
+            u = users_by_id.get(pick.user_id)
+            entry_num = getattr(pick, 'entry_number', 1) or 1
+            name = (u.groupme_name or u.username) if u else '?'
+
+            def cell_info(golfer_id):
+                if not golfer_id:
+                    return Td('-'), Td('-'), Td('-'), Td('-')
+                g = golfers_by_id.get(golfer_id)
+                g_name = g.name if g else f'ID:{golfer_id}'
+                dg_id = g.datagolf_id if g else '?'
+                result = results_by_golfer.get(golfer_id)
+                score = result.score_to_par if result else None
+                status = result.status if result else 'no result'
+                is_dupe = g_name in dupes
+                style = 'background:#fee' if is_dupe else ''
+                score_str = str(score) if score is not None else 'None'
+                return (
+                    Td(f'{g_name}{"*" if is_dupe else ""}', style=style),
+                    Td(str(golfer_id)),
+                    Td(dg_id or ''),
+                    Td(f'{score_str} ({status})', style='' if score is not None else 'color:red'),
+                )
+
+            t1 = cell_info(pick.tier1_golfer_id)
+            t2 = cell_info(pick.tier2_golfer_id)
+            t3 = cell_info(pick.tier3_golfer_id)
+            t4 = cell_info(pick.tier4_golfer_id)
+
+            rows.append(Tr(
+                Td(f'{name} ({entry_num})'),
+                *t1, *t2, *t3, *t4
+            ))
+
+        dupe_section = []
+        if dupes:
+            dupe_section = [
+                H3('Duplicate golfer names (highlighted in red above)'),
+                Ul(*[Li(f'{name}: IDs = {ids}') for name, ids in dupes.items()])
+            ]
+
+        return page_shell(
+            'Picks Debug',
+            H2(f'{tournament.name} — picks golfer debug'),
+            *dupe_section,
+            P('Columns: User | T1 name | T1 db_id | T1 dg_id | T1 score | T2... | T3... | T4...'),
+            P('score=None (red) means no tournament_result for that golfer_id. * = duplicate name.'),
+            Div(
+                Table(
+                    Thead(Tr(
+                        Th('Entry'),
+                        Th('T1 Name'), Th('T1 ID'), Th('T1 dg_id'), Th('T1 Score'),
+                        Th('T2 Name'), Th('T2 ID'), Th('T2 dg_id'), Th('T2 Score'),
+                        Th('T3 Name'), Th('T3 ID'), Th('T3 dg_id'), Th('T3 Score'),
+                        Th('T4 Name'), Th('T4 ID'), Th('T4 dg_id'), Th('T4 Score'),
+                    )),
+                    Tbody(*rows),
+                    style='font-size:0.8rem;border-collapse:collapse;width:100%'
+                ),
+                style='overflow-x:auto'
+            ),
+            user=user
+        )
+
+
 def _send_final_leaderboard_groupme(db_module, tournament_id):
     """Send final leaderboard to GroupMe when tournament completes."""
     from etl.tournament_state import send_final_leaderboard_groupme
