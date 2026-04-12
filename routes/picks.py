@@ -139,6 +139,13 @@ def setup_picks_routes(app):
         # Send GroupMe notification
         _send_pick_notification(db, user, tournament, entry, tier1, tier2, tier3, tier4, action)
 
+        # Recalculate standings so pick appears with current scores immediately
+        try:
+            from services.scoring import ScoringService
+            ScoringService(db).calculate_standings(tournament.id)
+        except Exception as e:
+            logger.warning(f"Failed to recalculate standings after pick save: {e}")
+
         return RedirectResponse("/picks", status_code=303)
 
     @app.post("/picks/delete")
