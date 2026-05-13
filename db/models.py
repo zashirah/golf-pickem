@@ -201,7 +201,6 @@ def create_tables(db):
     # Add UNIQUE constraints to datagolf_id to prevent duplicates on sync
     # This must be done after table creation
     _add_unique_constraints(db)
-    _enable_rls(db)
 
     return {
         'users': users,

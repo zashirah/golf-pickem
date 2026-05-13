@@ -101,6 +101,23 @@ logger.info("APScheduler started with 2 background jobs (lock_picks_job disabled
 atexit.register(lambda: scheduler.shutdown())
 
 
+# ============ Background RLS Setup ============
+# Runs after startup so it doesn't block port binding.
+# Each ALTER TABLE can take up to 2 min on Supabase; running inline
+# would cause Render to kill the deploy before the port opens.
+
+import threading
+import time as _time
+
+def _run_rls_setup():
+    _time.sleep(10)  # wait for the server to fully start
+    from db.models import _enable_rls
+    import db as _db
+    _enable_rls(_db.db)
+
+threading.Thread(target=_run_rls_setup, daemon=True).start()
+
+
 # ============ Run Server ============
 
 if __name__ == "__main__":
