@@ -114,6 +114,34 @@ class PickemStanding:
     updated_at: Optional[str] = None
 
 
+def _enable_rls(db):
+    """Enable Row Level Security on all tables (PostgreSQL only).
+
+    No policies are added — the Supabase REST/anon API gets no access,
+    but the app's direct postgres connection bypasses RLS and is unaffected.
+    """
+    import logging
+    from sqlalchemy import text
+    from config import DATABASE_URL
+
+    if not DATABASE_URL.startswith("postgresql"):
+        return
+
+    logger = logging.getLogger(__name__)
+    tables = [
+        "user", "session", "app_setting", "tournament", "golfer",
+        "tournament_field", "pick", "tournament_result", "pickem_standing",
+    ]
+    with db.engine.connect() as conn:
+        for table in tables:
+            try:
+                conn.execute(text(f'ALTER TABLE "{table}" ENABLE ROW LEVEL SECURITY'))
+                logger.info(f"Enabled RLS on table: {table}")
+            except Exception as e:
+                logger.debug(f"RLS already enabled or table not found for {table}: {e}")
+        conn.commit()
+
+
 def create_tables(db):
     """Create all database tables and return table references."""
 
@@ -174,6 +202,7 @@ def create_tables(db):
     # Add UNIQUE constraints to datagolf_id to prevent duplicates on sync
     # This must be done after table creation
     _add_unique_constraints(db)
+    _enable_rls(db)
 
     return {
         'users': users,
