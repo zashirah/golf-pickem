@@ -132,14 +132,13 @@ def _enable_rls(db):
         "user", "session", "app_setting", "tournament", "golfer",
         "tournament_field", "pick", "tournament_result", "pickem_standing",
     ]
-    with db.engine.connect() as conn:
-        for table in tables:
-            try:
+    for table in tables:
+        try:
+            with db.engine.connect().execution_options(isolation_level="AUTOCOMMIT") as conn:
                 conn.execute(text(f'ALTER TABLE "{table}" ENABLE ROW LEVEL SECURITY'))
                 logger.info(f"Enabled RLS on table: {table}")
-            except Exception as e:
-                logger.debug(f"RLS already enabled or table not found for {table}: {e}")
-        conn.commit()
+        except Exception as e:
+            logger.warning(f"Could not enable RLS on {table}: {e}")
 
 
 def create_tables(db):
