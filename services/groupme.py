@@ -88,7 +88,9 @@ class GroupMeClient:
 
             # Check if groupme_name matches any member's nickname
             for member in members:
-                if member.get("nickname", "").lower() == groupme_name.lower():
+                member_nickname = member.get("nickname", "").strip().lower()
+                input_name = groupme_name.strip().lower()
+                if member_nickname == input_name:
                     logger.info(f"GroupMe member verified: {groupme_name}")
                     return True
 
@@ -96,4 +98,4 @@ class GroupMeClient:
             return False
         except Exception as e:
             logger.error(f"Failed to verify GroupMe member: {e}")
-            return True  # Don't block registration on verification failure
+            return False  # Block registration on verification failure
